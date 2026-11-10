@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
 import "./App.css";
+import AdminPanel from "./AdminPanel";
 
 const API_URL = "http://127.0.0.1:8000/api/accounts";
 
@@ -222,6 +223,12 @@ function App() {
               <span className="welcome-user">
                 Hi, {username}
               </span>
+	<button
+ 		 className="nav-button"
+  		onClick={() => openPage("admin")}
+		>
+  		Admin Panel
+		</button>
               <button className="nav-button" onClick={handleLogout}>
                 Log out
               </button>
@@ -244,7 +251,7 @@ function App() {
           )}
         </div>
       </nav>
-
+	{page === "admin" && <AdminPanel />}
       {page === "home" && (
         <>
           <header className="hero">
