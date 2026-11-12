@@ -1,0 +1,254 @@
+
+.auth-page {
+  width: 100%;
+  padding: 55px 24px;
+  background: #f4f6f3;
+}
+
+.auth-layout {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  border-radius: 24px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 20px 65px rgba(24, 48, 39, 0.09);
+}
+
+.auth-intro {
+  background: linear-gradient(145deg, #173e35, #286d59);
+  color: white;
+  padding: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 650px;
+}
+
+.auth-brand {
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -1.2px;
+}
+
+.auth-brand span {
+  color: #a6e0b6;
+}
+
+.auth-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #78bd9b;
+  margin-bottom: 17px;
+}
+
+.auth-intro h1 {
+  font-size: clamp(35px, 4vw, 51px);
+  line-height: 1.12;
+  letter-spacing: -2px;
+  margin: 0 0 22px;
+}
+
+.auth-intro-text {
+  color: #d0e3d9;
+  font-size: 15px;
+  line-height: 1.8;
+  max-width: 390px;
+}
+
+.auth-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.auth-features span {
+  border: 1px solid rgba(255, 255, 255, 0.23);
+  color: #e2f1e8;
+  padding: 9px 13px;
+  border-radius: 30px;
+  font-size: 12px;
+}
+
+.auth-form-card {
+  padding: 48px;
+  align-self: center;
+}
+
+.auth-heading {
+  margin-bottom: 30px;
+}
+
+.auth-heading .auth-kicker {
+  color: #328568;
+}
+
+.auth-heading h2 {
+  color: #183a30;
+  font-size: 31px;
+  letter-spacing: -1px;
+  margin: 0 0 8px;
+}
+
+.auth-heading p:last-child {
+  color: #7b8981;
+  font-size: 14px;
+}
+
+.auth-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 19px 15px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.auth-field label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #34483d;
+}
+
+.auth-field input,
+.auth-field select,
+.auth-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dfe7e1;
+  border-radius: 9px;
+  padding: 13px 14px;
+  background: #fafcf9;
+  color: #203b30;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.auth-field input:focus,
+.auth-field select:focus,
+.auth-field textarea:focus {
+  border-color: #3b9875;
+  box-shadow: 0 0 0 3px rgba(59, 152, 117, 0.12);
+}
+
+.auth-field textarea {
+  resize: vertical;
+  min-height: 85px;
+}
+
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.character-count {
+  text-align: right;
+  color: #89958d;
+  font-size: 11px;
+}
+
+.auth-primary-button {
+  border: 0;
+  border-radius: 9px;
+  padding: 15px;
+  background: #246b53;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.auth-primary-button:hover:not(:disabled) {
+  background: #174d3b;
+  transform: translateY(-1px);
+}
+
+.auth-primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-alert {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 11px 13px;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.auth-alert.error {
+  color: #a52e36;
+  background: #fff0f0;
+}
+
+.auth-alert.success {
+  color: #176d43;
+  background: #eaf8ef;
+}
+
+.auth-bottom-text {
+  margin-top: 25px;
+  text-align: center;
+  color: #77847c;
+  font-size: 13px;
+}
+
+.auth-bottom-text button {
+  border: none;
+  background: none;
+  color: #287b5c;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.login-card {
+  padding-top: 75px;
+  padding-bottom: 75px;
+}
+
+@media (max-width: 800px) {
+  .auth-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-intro {
+    min-height: 310px;
+    padding: 32px;
+    gap: 35px;
+  }
+
+  .auth-intro h1 {
+    font-size: 37px;
+  }
+
+  .auth-form-card {
+    padding: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-page {
+    padding: 20px 12px;
+  }
+
+  .auth-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-field,
+  .full-width {
+    grid-column: 1;
+  }
+
+  .auth-form-card {
+    padding: 25px 19px;
+  }
+}
