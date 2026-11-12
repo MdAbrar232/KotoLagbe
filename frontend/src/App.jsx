@@ -30,10 +30,16 @@ function App() {
   const [isStaff, setIsStaff] = useState(false);
   const [formUsername, setFormUsername] = useState("");
 
+  // Determine which page can currently be displayed
+  const activePage =
+    (!accessToken && (page === "admin" || page === "profile")) ||
+    (page === "admin" && !isStaff)
+      ? "home"
+      : page;
+
   // Verify staff permissions
   useEffect(() => {
     if (!accessToken) {
-      setIsStaff(false);
       return;
     }
 
@@ -63,17 +69,6 @@ function App() {
 
     return () => controller.abort();
   }, [accessToken]);
-
-  // Protect private pages
-  useEffect(() => {
-    if (!accessToken && (page === "admin" || page === "profile")) {
-      setPage("home");
-    }
-
-    if (page === "admin" && !isStaff) {
-      setPage("home");
-    }
-  }, [page, accessToken, isStaff]);
 
   // Load places
   useEffect(() => {
@@ -149,7 +144,6 @@ function App() {
 
   return (
     <main className="app">
-
       <nav className="site-nav">
         <button
           className="brand-button"
@@ -208,20 +202,20 @@ function App() {
         </div>
       </nav>
 
-      {page === "admin" && isStaff && <AdminPanel />}
+      {activePage === "admin" && isStaff && <AdminPanel />}
 
-      {page === "profile" && accessToken && (
+      {activePage === "profile" && accessToken && (
         <Profile accessToken={accessToken} />
       )}
 
-      {page === "details" && selectedPlaceId !== null && (
+      {activePage === "details" && selectedPlaceId !== null && (
         <PlaceDetails
           placeId={selectedPlaceId}
           onBack={() => openPage("home")}
         />
       )}
 
-      {page === "home" && (
+      {activePage === "home" && (
         <>
           <header className="hero">
             <p className="eyebrow">YOUR CITY, DISCOVERED</p>
@@ -348,14 +342,14 @@ function App() {
         </>
       )}
 
-      {page === "register" && (
+      {activePage === "register" && (
         <Register
           onRegistered={handleRegistered}
           onSwitchToLogin={() => openPage("login")}
         />
       )}
 
-      {page === "login" && (
+      {activePage === "login" && (
         <Login
           initialUsername={formUsername}
           onLoginSuccess={handleLoginSuccess}
@@ -367,7 +361,6 @@ function App() {
         <span>KotoLagbe?</span>
         <span>Discover more. Spend smarter.</span>
       </footer>
-
     </main>
   );
 }
