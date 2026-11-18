@@ -351,6 +351,14 @@ function App() {
         </>
       )}
 
+      {activePage === "transport" && (
+        <TransportPage
+          token={accessToken}
+          onSignedIn={handleLoginSuccess}
+          onRegister={() => openPage("register")}
+        />
+      )}
+
       {activePage === "register" && (
         <Register
           onRegistered={handleRegistered}

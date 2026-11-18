@@ -3,29 +3,72 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
 
+from transport.models import FareSubmission, Location, TransportMode
+from .models import AdminActivityLog
+
 Place = apps.get_model("places", "Place")
 User = get_user_model()
 
 
 class PlaceAdminSerializer(serializers.ModelSerializer):
-    """Exposes every field of the Place model, whatever the teammate adds to it."""
-
     class Meta:
         model = Place
         fields = "__all__"
 
 
-UserProfile = apps.get_model("accounts", "UserProfile")
+class LocationAdminSerializer(serializers.ModelSerializer):
+    contributor = serializers.CharField(source="submitted_by.username", read_only=True, default=None)
 
-_USER_FIELDS = [
-    "id", "username", "email", "is_active", "is_staff",
-    "is_superuser", "date_joined", "last_login",
-]
+    class Meta:
+        model = Location
+        fields = ["id", "name", "area", "description", "latitude", "longitude",
+                  "status", "submitted_by", "contributor", "submitted_at"]
+        read_only_fields = ["id", "submitted_by", "contributor", "submitted_at", "status"]
+        extra_kwargs = {"latitude": {"coerce_to_string": False}, "longitude": {"coerce_to_string": False}}
+
+
+class TransportModeAdminSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportMode
+        fields = ["id", "name", "is_active"]
+
+
+class FareAdminSerializer(serializers.ModelSerializer):
+    origin_name = serializers.CharField(source="origin.name", read_only=True)
+    origin_area = serializers.CharField(source="origin.area", read_only=True)
+    destination_name = serializers.CharField(source="destination.name", read_only=True)
+    destination_area = serializers.CharField(source="destination.area", read_only=True)
+    transport_mode_name = serializers.CharField(source="transport_mode.name", read_only=True)
+    contributor = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FareSubmission
+        fields = ["id", "origin", "origin_name", "origin_area", "destination", "destination_name", "destination_area",
+                  "transport_mode", "transport_mode_name", "fare", "submitted_by", "contributor", "submitted_at", "status"]
+        read_only_fields = fields
+
+    def get_contributor(self, obj):
+        return obj.submitted_by.username if obj.submitted_by else "Deleted user"
+
+
+class AdminActivityLogSerializer(serializers.ModelSerializer):
+    actor_username = serializers.SerializerMethodField()
+
+    def get_actor_username(self, obj):
+        return obj.actor.username if obj.actor else "Deleted admin"
+
+    class Meta:
+        model = AdminActivityLog
+        fields = ["id", "actor_username", "action", "entity", "entity_id", "summary", "created_at"]
+        read_only_fields = fields
+
+
+UserProfile = apps.get_model("accounts", "UserProfile")
+_USER_FIELDS = ["id", "username", "email", "is_active", "is_staff", "is_superuser", "date_joined", "last_login"]
 _existing = {f.name for f in User._meta.get_fields()}
 
 
 def _profile_of(user):
-    """The user's profile, or None if it was never created."""
     try:
         return user.profile
     except UserProfile.DoesNotExist:
@@ -33,8 +76,6 @@ def _profile_of(user):
 
 
 class UserAdminSerializer(serializers.ModelSerializer):
-    """Read-only account summary, including the profile information."""
-
     full_name = serializers.SerializerMethodField()
     gender = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
@@ -49,22 +90,13 @@ class UserAdminSerializer(serializers.ModelSerializer):
         profile = _profile_of(user)
         return getattr(profile, name) if profile else empty
 
-    def get_full_name(self, user):
-        return self._profile_value(user, "full_name")
-
-    def get_gender(self, user):
-        return self._profile_value(user, "gender", "prefer_not_to_say")
-
-    def get_location(self, user):
-        return self._profile_value(user, "location")
-
-    def get_bio(self, user):
-        return self._profile_value(user, "bio")
+    def get_full_name(self, user): return self._profile_value(user, "full_name")
+    def get_gender(self, user): return self._profile_value(user, "gender", "prefer_not_to_say")
+    def get_location(self, user): return self._profile_value(user, "location")
+    def get_bio(self, user): return self._profile_value(user, "bio")
 
 
 class UserAdminUpdateSerializer(serializers.Serializer):
-    """What an administrator may change on another user's account."""
-
     username = serializers.CharField(max_length=150, required=False)
     email = serializers.EmailField(required=False)
     full_name = serializers.CharField(max_length=120, required=False)
@@ -74,8 +106,7 @@ class UserAdminUpdateSerializer(serializers.Serializer):
 
     def validate_username(self, value):
         value = value.strip()
-        if not value:
-            raise serializers.ValidationError("Username cannot be empty.")
+        if not value: raise serializers.ValidationError("Username cannot be empty.")
         if User.objects.filter(username__iexact=value).exclude(pk=self.instance.pk).exists():
             raise serializers.ValidationError("This username is already taken.")
         return value
@@ -87,24 +118,17 @@ class UserAdminUpdateSerializer(serializers.Serializer):
 
     def validate_full_name(self, value):
         value = value.strip()
-        if not value:
-            raise serializers.ValidationError("Full name cannot be empty.")
+        if not value: raise serializers.ValidationError("Full name cannot be empty.")
         return value
 
     @transaction.atomic
     def update(self, user, validated_data):
         for field in ("username", "email"):
-            if field in validated_data:
-                setattr(user, field, validated_data[field])
+            if field in validated_data: setattr(user, field, validated_data[field])
         user.save()
-
-        profile_data = {k: v for k, v in validated_data.items()
-                        if k in ("full_name", "gender", "location", "bio")}
+        profile_data = {k: v for k, v in validated_data.items() if k in ("full_name", "gender", "location", "bio")}
         if profile_data:
-            profile, _ = UserProfile.objects.get_or_create(
-                user=user, defaults={"full_name": user.username, "location": ""}
-            )
-            for key, value in profile_data.items():
-                setattr(profile, key, value)
+            profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"full_name": user.username, "location": ""})
+            for key, value in profile_data.items(): setattr(profile, key, value)
             profile.save()
         return user

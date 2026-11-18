@@ -284,3 +284,13 @@ button.primary {
   color: #b42318;
   font-size: 13px;
 }
+
+
+.admin-section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 4px 0 14px; }
+.admin-section-heading h2 { margin:0; font-family:"Space Grotesk",sans-serif; font-size:21px; }
+.admin-section-heading button { padding:9px 14px; border:1px solid #536b48; border-radius:9px; background:#536b48; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+.tabs { flex-wrap:wrap; }
+.tabs button { border-radius:9px; }
+td small { display:block; margin-top:3px; color:#8b8d83; font-size:11px; }
+.modal input[type="number"] { appearance:textfield; }
+@media (max-width:600px) { .admin-section-heading { align-items:flex-start; flex-direction:column; } .tabs { overflow-x:auto; padding-bottom:5px; } .tabs button { white-space:nowrap; } }
