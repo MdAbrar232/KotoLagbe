@@ -25,7 +25,8 @@ async function request(path, options = {}) {
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || "Request failed.");
+    const firstFieldError = Object.values(body).flat()[0];
+    throw new Error(body.detail || (typeof firstFieldError === "string" ? firstFieldError : "") || "Request failed.");
   }
   return response.status === 204 ? null : response.json();
 }
@@ -37,6 +38,22 @@ const EDIT_FIELDS = [
   ["address", "Address"],
   ["average_price", "Average price"],
   ["description", "Description"],
+];
+
+const USER_FIELDS = [
+  ["username", "Username"],
+  ["email", "Email"],
+  ["full_name", "Full name"],
+  ["location", "Location"],
+  ["bio", "Bio"],
+];
+
+const GENDERS = [
+  ["male", "Male"],
+  ["female", "Female"],
+  ["non_binary", "Non-binary"],
+  ["other", "Other"],
+  ["prefer_not_to_say", "Prefer not to say"],
 ];
 
 function AdminPanel() {
@@ -51,6 +68,8 @@ function AdminPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [draft, setDraft] = useState(null);
+  const [userDraft, setUserDraft] = useState(null);
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +130,22 @@ function AdminPanel() {
     });
     await act(`/places/${draft.id}/`, { method: "PATCH", body: JSON.stringify(body) });
     setDraft(null);
+  }
+
+  async function saveUser(event) {
+    event.preventDefault();
+    setFormError("");
+    const body = {};
+    [...USER_FIELDS.map(([key]) => key), "gender"].forEach((key) => {
+      body[key] = userDraft[key] ?? "";
+    });
+    try {
+      await request(`/users/${userDraft.id}/`, { method: "PATCH", body: JSON.stringify(body) });
+      setUserDraft(null);
+      reload();
+    } catch (err) {
+      setFormError(err.message === "AUTH" ? "Administrator access required." : err.message);
+    }
   }
 
   function saveToken() {
@@ -229,16 +264,21 @@ function AdminPanel() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+                  <tr><th>Username</th><th>Full name</th><th>Email</th><th>Location</th><th>Role</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {items.map((user) => (
                     <tr key={user.id}>
                       <td>{user.username}</td>
+                      <td>{user.full_name}</td>
                       <td>{user.email}</td>
+                      <td>{user.location}</td>
                       <td>{user.is_staff ? "Admin" : "Member"}</td>
                       <td><span className={`badge ${user.is_active ? "approved" : "rejected"}`}>{user.is_active ? "Active" : "Blocked"}</span></td>
                       <td className="actions">
+                        {!user.is_staff && (
+                          <button type="button" onClick={() => { setFormError(""); setUserDraft({ ...user }); }}>Edit</button>
+                        )}
                         {!user.is_staff && (user.is_active ? (
                           <button type="button" onClick={() => act(`/users/${user.id}/block/`, { method: "POST" }, `Block ${user.username}?`)}>Block</button>
                         ) : (
@@ -279,6 +319,40 @@ function AdminPanel() {
             ))}
             <div className="modal-actions">
               <button type="button" onClick={() => setDraft(null)}>Cancel</button>
+              <button type="submit" className="primary">Save changes</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {userDraft && (
+        <div className="modal-backdrop">
+          <form className="modal" onSubmit={saveUser}>
+            <h2>Edit user</h2>
+            {USER_FIELDS.map(([key, label]) => (
+              <label key={key}>
+                {label}
+                {key === "bio" ? (
+                  <textarea rows={3} maxLength={300} value={userDraft[key] ?? ""} onChange={(event) => setUserDraft({ ...userDraft, [key]: event.target.value })} />
+                ) : (
+                  <input
+                    type={key === "email" ? "email" : "text"}
+                    required={key !== "location"}
+                    value={userDraft[key] ?? ""}
+                    onChange={(event) => setUserDraft({ ...userDraft, [key]: event.target.value })}
+                  />
+                )}
+              </label>
+            ))}
+            <label>
+              Gender
+              <select value={userDraft.gender ?? "prefer_not_to_say"} onChange={(event) => setUserDraft({ ...userDraft, gender: event.target.value })}>
+                {GENDERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            {formError && <p className="form-error">{formError}</p>}
+            <div className="modal-actions">
+              <button type="button" onClick={() => setUserDraft(null)}>Cancel</button>
               <button type="submit" className="primary">Save changes</button>
             </div>
           </form>

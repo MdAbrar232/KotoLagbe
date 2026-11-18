@@ -100,6 +100,7 @@
 .admin-filters select,
 .login-row input,
 .modal input,
+.modal select,
 .modal textarea {
   width: 100%;
   min-width: 0;
@@ -276,4 +277,10 @@ button.primary {
   .admin-filters {
     grid-template-columns: 1fr;
   }
+}
+
+.form-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 13px;
 }

@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .permissions import IsAdmin
-from .serializers import PlaceAdminSerializer, UserAdminSerializer
+from .serializers import PlaceAdminSerializer, UserAdminSerializer, UserAdminUpdateSerializer
 
 Place = apps.get_model("places", "Place")
 User = get_user_model()
@@ -59,19 +59,25 @@ class PlaceAdminViewSet(viewsets.ModelViewSet):
 class UserAdminViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Admin view of accounts: list, block, unblock, delete."""
+    """Admin view of accounts: list, edit information, block, unblock, delete."""
 
     serializer_class = UserAdminSerializer
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = [f for f in ("username", "email") if f in USER_FIELDS]
+    search_fields = [f for f in ("username", "email", "profile__full_name") if f.split("__")[0] in USER_FIELDS]
     ordering = ("-date_joined",) if "date_joined" in USER_FIELDS else ("-pk",)
 
+    def get_serializer_class(self):
+        if self.action in ("update", "partial_update"):
+            return UserAdminUpdateSerializer
+        return UserAdminSerializer
+
     def get_queryset(self):
-        queryset = User.objects.all()
+        queryset = User.objects.all().select_related("profile")
         state = self.request.query_params.get("blocked")
         if state in ("true", "false"):
             queryset = queryset.filter(is_active=(state == "false"))
@@ -86,6 +92,18 @@ class UserAdminViewSet(
             return Response({"detail": "Staff accounts cannot be changed here."},
                             status=status.HTTP_403_FORBIDDEN)
         return None
+
+    def update(self, request, *args, **kwargs):
+        """Edit a member's username, email and profile (always a partial update)."""
+        target = self.get_object()
+        refused = self._refuse(request, target)
+        if refused:
+            return refused
+        serializer = self.get_serializer(target, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        target = self.get_queryset().get(pk=target.pk)
+        return Response(UserAdminSerializer(target, context=self.get_serializer_context()).data)
 
     def _set_active(self, request, active):
         target = self.get_object()
