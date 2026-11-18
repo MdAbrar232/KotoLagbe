@@ -1,4 +1,5 @@
 
+import TransportPage from "./transport/TransportPage.jsx";
 import { useEffect, useState } from "react";
 import "./App.css";
 
@@ -159,6 +160,14 @@ function App() {
         </button>
 
         <div className="nav-actions">
+          <button
+            type="button"
+            className="nav-button"
+            aria-current={page === "transport" ? "page" : undefined}
+            onClick={() => openPage("transport")}
+          >
+            Transport
+          </button>
           {accessToken ? (
             <>
               <span className="welcome-user">
@@ -207,6 +216,17 @@ function App() {
           )}
         </div>
       </nav>
+
+      {page === "transport" && (
+        <TransportPage
+          token={accessToken}
+          onSignedIn={(data) => {
+            handleLoginSuccess(data);
+            openPage("transport");
+          }}
+          onRegister={() => openPage("register")}
+        />
+      )}
 
       {page === "admin" && isStaff && <AdminPanel />}
 
