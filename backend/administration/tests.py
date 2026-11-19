@@ -698,3 +698,35 @@ class LocationModerationTests(APITestCase):
             location.status,
             self.LocationStatus.REJECTED,
         )
+
+
+class TransportModeNameTests(APITestCase):
+    """Transport mode names are unique ignoring capital letters."""
+
+    def setUp(self):
+        from transport.models import TransportMode
+        self.admin = User.objects.create_user("boss3", "boss3@example.com", "pw12345!", is_staff=True)
+        self.client.force_authenticate(self.admin)
+        self.tempo = TransportMode.objects.create(name="Tempo")
+        self.van = TransportMode.objects.create(name="Van")
+
+    def test_create_with_different_capitals_is_rejected(self):
+        response = self.client.post("/api/admin/transport-modes/", {"name": "TEMPO"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("name", response.json())
+
+    def test_rename_to_another_modes_name_is_rejected(self):
+        response = self.client.patch(f"/api/admin/transport-modes/{self.van.pk}/", {"name": "tempo"}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_mode_can_change_its_own_capitalisation(self):
+        response = self.client.patch(f"/api/admin/transport-modes/{self.tempo.pk}/", {"name": "tempo"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "tempo")
+
+    def test_name_is_trimmed_and_blank_is_rejected(self):
+        created = self.client.post("/api/admin/transport-modes/", {"name": "  Ferry boat  "}, format="json")
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["name"], "Ferry boat")
+        blank = self.client.post("/api/admin/transport-modes/", {"name": "   "}, format="json")
+        self.assertEqual(blank.status_code, 400)

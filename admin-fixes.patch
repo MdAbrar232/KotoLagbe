@@ -1,0 +1,253 @@
+diff --git a/ADMIN_LOCATION_TRANSPORT_INTEGRATION_README.md b/ADMIN_LOCATION_TRANSPORT_INTEGRATION_README.md
+deleted file mode 100644
+index 8f908a2..0000000
+--- a/ADMIN_LOCATION_TRANSPORT_INTEGRATION_README.md
++++ /dev/null
+@@ -1,45 +0,0 @@
+-# KotoLagbe Complete Administration Extension
+-
+-This package combines the transport administration extension with user-submitted location moderation.
+-
+-## Admin Panel sections
+-- Places
+-- Users (including existing profile/account editing)
+-- Locations (list, status filters, approve/reject, edit/delete)
+-- Transport modes (add/edit/delete/activate/deactivate)
+-- Fare moderation (pending/approved/rejected filters, approve/reject)
+-- Activity log
+-
+-## Location workflow
+-- Public GET locations returns approved locations only.
+-- Authenticated users can POST a location; it is saved as pending.
+-- Admins can review and approve/reject locations.
+-- Admin-created locations are created as approved.
+-- Existing locations are migrated as approved to preserve current route data.
+-
+-## Public transportation workflow
+-- Only active transport modes are listed publicly.
+-- Public fare listings include only approved fares using active modes and approved locations.
+-- User fare submissions are pending until moderated.
+-
+-## Migration
+-A single transport migration `0002_admin_location_and_mode_moderation.py` adds:
+-- `TransportMode.is_active`
+-- `Location.submitted_by`, `submitted_at`, and `status`
+-
+-Run:
+-```powershell
+-cd backend
+-.\\venv\\Scripts\\python.exe manage.py migrate
+-.\\venv\\Scripts\\python.exe manage.py check
+-.\\venv\\Scripts\\python.exe manage.py test administration transport
+-```
+-
+-Then:
+-```powershell
+-cd frontend
+-npm.cmd run lint
+-npm.cmd run build
+-```
+-
+-The tests/build must be run in your local environment before pushing. This package has been source-integrated but not executed against your local PostgreSQL database.
+diff --git a/ADMIN_MODULE_README.md b/ADMIN_MODULE_README.md
+new file mode 100644
+index 0000000..e9cd084
+--- /dev/null
++++ b/ADMIN_MODULE_README.md
+@@ -0,0 +1,40 @@
++# KotoLagbe Administration Module
++
++Staff-only management and moderation, in `backend/administration` (API) and `frontend/src/AdminPanel.jsx` (page).
++Every endpoint below needs a logged-in staff user (`is_staff=True`) and a Bearer access token; other users get 403.
++
++## Admin Panel sections
++Places, Users, Locations, Transport modes, Fare moderation, Activity log, plus dashboard counts.
++
++## Endpoints
++| Method | Endpoint | Purpose |
++|---|---|---|
++| GET, PATCH, DELETE | `/api/admin/places/`, `/api/admin/places/{id}/` | List, search, edit, delete places |
++| GET, PATCH, DELETE | `/api/admin/users/`, `/api/admin/users/{id}/` | List, search, edit information, delete users |
++| POST | `/api/admin/users/{id}/block/` and `/unblock/` | Switch an account off or on |
++| GET, POST | `/api/admin/locations/` | List (filter `?status=`) or create (created as approved) |
++| PATCH, DELETE | `/api/admin/locations/{id}/` | Edit or delete a location (409 if fares use it) |
++| POST | `/api/admin/locations/{id}/approve/` and `/reject/` | Moderate a submitted location |
++| GET, POST | `/api/admin/transport-modes/` | List (filter `?active=`) or add a mode |
++| PATCH, DELETE | `/api/admin/transport-modes/{id}/` | Edit or delete a mode (409 if fares use it) |
++| POST | `/api/admin/transport-modes/{id}/activate/` and `/deactivate/` | Switch a mode on or off |
++| GET | `/api/admin/fares/` (filter `?status=pending\|approved\|rejected`) | Fare submissions with origin, destination, mode, fare, contributor, date |
++| POST | `/api/admin/fares/{id}/approve/` and `/reject/` | Moderate a fare |
++| GET | `/api/admin/activity/` | Log of admin actions |
++| GET | `/api/admin/stats/` | Dashboard counts (also tells the site whether the user is staff) |
++
++## Workflows
++- **Locations:** a logged-in user can submit one; it is saved as `pending` and is not public until an admin approves it. Admin-created locations are `approved`.
++- **Transport modes:** only active modes are listed publicly, and fares cannot be submitted on an inactive mode. Mode names are unique ignoring capital letters.
++- **Fares:** user submissions are `pending`. The public fare list shows only `approved` fares whose mode is active and whose origin and destination are approved.
++- **Migration:** `transport.0002` adds `TransportMode.is_active` and `Location.submitted_by`, `submitted_at`, `status`. Existing locations become `approved` and existing modes stay active.
++
++## Run the checks
++```
++cd backend
++python manage.py migrate
++python manage.py test
++cd ../frontend
++npm run lint
++npm run build
++```
+diff --git a/ADMIN_TRANSPORT_INTEGRATION_README.md b/ADMIN_TRANSPORT_INTEGRATION_README.md
+deleted file mode 100644
+index 195a200..0000000
+--- a/ADMIN_TRANSPORT_INTEGRATION_README.md
++++ /dev/null
+@@ -1,87 +0,0 @@
+-# KotoLagbe Administration: Location & Transportation Extension
+-
+-This package extends the existing Administration app and the Transport module already present in this repository. It does not create duplicate `Location`, `TransportMode`, or `FareSubmission` models.
+-
+-## Included administration features
+-
+-- Existing Places and Users administration retained.
+-- Location list, create, edit, and delete.
+-- Transport mode list, create, edit, activate/deactivate, and delete.
+-- Fare submission moderation with pending/approved/rejected filters and approve/reject actions.
+-- Fare table includes origin, destination, mode, amount, contributor, submission date, and status.
+-- Admin dashboard transport statistics.
+-- Admin activity log for administrative changes.
+-- Admin API endpoints protected by the existing `IsAdmin` permission (`is_staff=True`).
+-- Public transport mode listing hides inactive modes.
+-- Public fare listing continues to show only approved fares and now also hides fares for inactive transport modes.
+-- Fare submissions using inactive transport modes are rejected.
+-- Referenced locations/modes cannot be deleted while fare submissions depend on them; the API responds with HTTP 409 rather than an unhandled server error.
+-
+-## Important model coordination note
+-
+-Rizwan's supplied `Location` model has no submission status or location-submission workflow. The public location API is read-only and there is no user-submitted-location endpoint in this source tree. Therefore, this package provides location administration CRUD but does **not** add approve/reject buttons for locations. That workflow should only be added after the team agrees on a location status field and submission API.
+-
+-The supplied `TransportMode` model also had no active/inactive field. This package adds one additive field, `is_active` (default `True`), with migration `transport.0002_transportmode_is_active`. Existing seeded modes remain active after migration. Please tell Rizwan about this additive model change before merging if he is still modifying the same model.
+-
+-## Apply the changes
+-
+-From PowerShell:
+-
+-```powershell
+-cd C:\Users\User\Downloads\KotoLagbe
+-```
+-
+-Extract/merge this package into the existing repository, preserving your local `.env` file. Then run:
+-
+-```powershell
+-cd backend
+-.\venv\Scripts\python.exe manage.py migrate
+-.\venv\Scripts\python.exe manage.py check
+-.\venv\Scripts\python.exe manage.py test administration transport
+-```
+-
+-In another terminal:
+-
+-```powershell
+-cd C:\Users\User\Downloads\KotoLagbe\frontend
+-npm.cmd run lint
+-npm.cmd run build
+-```
+-
+-Start the backend and frontend normally after checks pass. Do not replace your `.env` file with `.env.example`.
+-
+-## New admin endpoints
+-
+-All endpoints below require an authenticated staff account and a Bearer access token.
+-
+-| Method | Endpoint | Purpose |
+-|---|---|---|
+-| GET/POST | `/api/admin/locations/` | List/create locations |
+-| GET/PATCH/PUT/DELETE | `/api/admin/locations/{id}/` | Retrieve/edit/delete location |
+-| GET/POST | `/api/admin/transport-modes/` | List/create transport modes |
+-| GET/PATCH/PUT/DELETE | `/api/admin/transport-modes/{id}/` | Retrieve/edit/delete mode |
+-| POST | `/api/admin/transport-modes/{id}/activate/` | Activate mode |
+-| POST | `/api/admin/transport-modes/{id}/deactivate/` | Deactivate mode |
+-| GET | `/api/admin/fares/` | List fare submissions |
+-| GET | `/api/admin/fares/?status=pending` | Filter fare status (also `approved`, `rejected`) |
+-| POST | `/api/admin/fares/{id}/approve/` | Approve fare |
+-| POST | `/api/admin/fares/{id}/reject/` | Reject fare |
+-| GET | `/api/admin/activity/` | Read admin activity log |
+-| GET | `/api/admin/stats/` | Dashboard counts |
+-
+-The existing Places and Users endpoints remain unchanged.
+-
+-## Suggested manual verification
+-
+-1. Sign in as a staff user and open the Admin Panel.
+-2. Create a test location and a test transport mode; edit each one.
+-3. Deactivate a mode and confirm it disappears from the public Transport mode selector/list endpoint. Reactivate it.
+-4. Submit a fare using a normal account. Confirm it appears as pending in Fare Moderation but not in public approved fares.
+-5. Approve it and confirm it appears in the public fare list.
+-6. Reject it and confirm it disappears from the public fare list again.
+-7. Open Activity Log and verify the moderation action is recorded.
+-8. Sign in as a normal user and confirm `/api/admin/locations/`, `/api/admin/transport-modes/`, and `/api/admin/fares/` return HTTP 403.
+-
+-## Scope note
+-
+-This ZIP is a code integration package based on the uploaded repository snapshot. Run the migrations, automated tests, frontend lint, and frontend build on your machine before committing. No changes have been pushed to GitHub.
+diff --git a/backend/administration/serializers.py b/backend/administration/serializers.py
+index d7ea612..4240bcd 100644
+--- a/backend/administration/serializers.py
++++ b/backend/administration/serializers.py
+@@ -32,6 +32,18 @@ class TransportModeAdminSerializer(serializers.ModelSerializer):
+         model = TransportMode
+         fields = ["id", "name", "is_active"]
+ 
++    def validate_name(self, value):
++        """Names are unique ignoring capital letters, so "bus" cannot sit next to "Bus"."""
++        value = value.strip()
++        if not value:
++            raise serializers.ValidationError("Name cannot be empty.")
++        clash = TransportMode.objects.filter(name__iexact=value)
++        if self.instance is not None:
++            clash = clash.exclude(pk=self.instance.pk)
++        if clash.exists():
++            raise serializers.ValidationError("A transport mode with this name already exists.")
++        return value
++
+ 
+ class FareAdminSerializer(serializers.ModelSerializer):
+     origin_name = serializers.CharField(source="origin.name", read_only=True)
+diff --git a/backend/administration/tests.py b/backend/administration/tests.py
+index 99cd4c3..a104159 100644
+--- a/backend/administration/tests.py
++++ b/backend/administration/tests.py
+@@ -698,3 +698,35 @@ class LocationModerationTests(APITestCase):
+             location.status,
+             self.LocationStatus.REJECTED,
+         )
++
++
++class TransportModeNameTests(APITestCase):
++    """Transport mode names are unique ignoring capital letters."""
++
++    def setUp(self):
++        from transport.models import TransportMode
++        self.admin = User.objects.create_user("boss3", "boss3@example.com", "pw12345!", is_staff=True)
++        self.client.force_authenticate(self.admin)
++        self.tempo = TransportMode.objects.create(name="Tempo")
++        self.van = TransportMode.objects.create(name="Van")
++
++    def test_create_with_different_capitals_is_rejected(self):
++        response = self.client.post("/api/admin/transport-modes/", {"name": "TEMPO"}, format="json")
++        self.assertEqual(response.status_code, 400)
++        self.assertIn("name", response.json())
++
++    def test_rename_to_another_modes_name_is_rejected(self):
++        response = self.client.patch(f"/api/admin/transport-modes/{self.van.pk}/", {"name": "tempo"}, format="json")
++        self.assertEqual(response.status_code, 400)
++
++    def test_mode_can_change_its_own_capitalisation(self):
++        response = self.client.patch(f"/api/admin/transport-modes/{self.tempo.pk}/", {"name": "tempo"}, format="json")
++        self.assertEqual(response.status_code, 200)
++        self.assertEqual(response.json()["name"], "tempo")
++
++    def test_name_is_trimmed_and_blank_is_rejected(self):
++        created = self.client.post("/api/admin/transport-modes/", {"name": "  Ferry boat  "}, format="json")
++        self.assertEqual(created.status_code, 201)
++        self.assertEqual(created.json()["name"], "Ferry boat")
++        blank = self.client.post("/api/admin/transport-modes/", {"name": "   "}, format="json")
++        self.assertEqual(blank.status_code, 400)

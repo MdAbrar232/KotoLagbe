@@ -32,6 +32,18 @@ class TransportModeAdminSerializer(serializers.ModelSerializer):
         model = TransportMode
         fields = ["id", "name", "is_active"]
 
+    def validate_name(self, value):
+        """Names are unique ignoring capital letters, so "bus" cannot sit next to "Bus"."""
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be empty.")
+        clash = TransportMode.objects.filter(name__iexact=value)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError("A transport mode with this name already exists.")
+        return value
+
 
 class FareAdminSerializer(serializers.ModelSerializer):
     origin_name = serializers.CharField(source="origin.name", read_only=True)
