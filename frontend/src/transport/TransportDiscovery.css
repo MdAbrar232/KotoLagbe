@@ -1,0 +1,66 @@
+.transport-discovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 64px;
+  padding: 28px 32px;
+  border: 1px solid #d9e1d3;
+  border-radius: 16px;
+  background: #edf2e8;
+}
+
+.transport-discovery h2 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(22px, 3vw, 28px);
+  letter-spacing: -0.8px;
+  color: #30442c;
+}
+
+.transport-discovery p {
+  margin: 9px 0 0;
+  color: #52624b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.transport-discovery button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 46px;
+  padding: 12px 18px;
+  border: 1px solid #536b48;
+  border-radius: 9px;
+  background: #536b48;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.transport-discovery button:hover {
+  background: #405638;
+}
+
+.transport-discovery button:focus-visible {
+  outline: 3px solid #536b48;
+  outline-offset: 4px;
+}
+
+@media (max-width: 700px) {
+  .transport-discovery {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 24px;
+    margin-bottom: 40px;
+  }
+
+  .transport-discovery button {
+    width: 100%;
+  }
+}

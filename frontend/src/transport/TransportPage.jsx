@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import Login from "../login.jsx";
 import { emptyRoute, transportRequest } from "./api.js";
 import { useTransportList } from "./useTransportList.js";
@@ -54,17 +54,22 @@ function FareFinder({ route, setRoute, locations, modes }) {
   const filters = new URLSearchParams(Object.entries(route).filter(([, value]) => value !== "")).toString();
   const list = useTransportList(filters ? "fares/?" + filters : "fares/");
   return (
-    <>
-      <div className="tr-panel">
+    <div className="tr-finder">
+      <section className="tr-panel tr-route-panel" aria-label="Route filters">
         <div className="tr-heading">
           <h2>Choose a route</h2>
           {filters && <button type="button" className="tr-link" onClick={() => setRoute(emptyRoute)}>Clear filters</button>}
         </div>
         <RouteFields route={route} setRoute={setRoute} locations={locations} modes={modes} />
-      </div>
+      </section>
       <section className="tr-results" aria-label="Approved fares">
         <div className="tr-heading">
-          <h2>Approved fares</h2>
+          <h2>
+            Approved fares
+            {!list.loading && !list.error && (
+              <span className="tr-result-count">{list.rows.length}</span>
+            )}
+          </h2>
           <button type="button" className="tr-quiet" disabled={list.loading} onClick={list.reload}>Refresh fares</button>
         </div>
         <LoadState lists={[list]}>
@@ -73,7 +78,7 @@ function FareFinder({ route, setRoute, locations, modes }) {
             : <p className="tr-empty">{filters ? "No approved fares match this route." : "No fares have been approved yet."}</p>}
         </LoadState>
       </section>
-    </>
+    </div>
   );
 }
 
@@ -114,7 +119,7 @@ function FareForm({ route, setRoute, locations, modes, token, onSignIn }) {
     return <p className="tr-empty">A fare needs two different locations and a transport mode. Check back when those are available.</p>;
   }
   return (
-    <form className="tr-panel" onSubmit={submit}>
+    <form className="tr-panel tr-submission" onSubmit={submit}>
       <div className="tr-heading"><h2>Report what you paid</h2></div>
       <fieldset className="tr-fieldset" disabled={busy}>
         <RouteFields route={route} setRoute={setRoute} locations={locations} modes={modes} required />
@@ -131,7 +136,7 @@ function FareForm({ route, setRoute, locations, modes, token, onSignIn }) {
   );
 }
 
-export default function TransportPage({ token, onSignedIn, onRegister }) {
+export default function TransportPage({ token, onSignedIn, onRegister, onBack }) {
   const [page, setPage] = useState("transport");
   const [route, setRoute] = useState(emptyRoute);
   const [showLogin, setShowLogin] = useState(false);
@@ -143,16 +148,33 @@ export default function TransportPage({ token, onSignedIn, onRegister }) {
   const lists = directory ? [locations] : [locations, modes];
   const onSignIn = () => setShowLogin(true);
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   if (showLogin) {
-    return <Login
-      initialUsername={localStorage.getItem("username") || ""}
-      onLoginSuccess={(data) => { setShowLogin(false); onSignedIn(data); }}
-      onSwitchToRegister={onRegister}
-    />;
+    return (
+      <div className="tr-login">
+        <button type="button" className="tr-back" onClick={() => setShowLogin(false)}>
+          <span aria-hidden="true">←</span> Back to transport
+        </button>
+        <Login
+          initialUsername={localStorage.getItem("username") || ""}
+          onLoginSuccess={(data) => {
+            setShowLogin(false);
+            onSignedIn(data);
+          }}
+          onSwitchToRegister={onRegister}
+        />
+      </div>
+    );
   }
 
   return (
     <section className="tr-page tr-public" aria-label="Transport">
+      <button type="button" className="tr-back" onClick={onBack}>
+        <span aria-hidden="true">←</span> Back to places
+      </button>
       <header className="tr-header">
         <h1>Transport fares</h1>
         <p>Find what riders paid between stops in Dhaka.</p>
@@ -163,7 +185,7 @@ export default function TransportPage({ token, onSignedIn, onRegister }) {
         ))}
       </nav>
       {guestPrompt ? (
-        <div className="tr-panel">
+        <div className="tr-panel tr-submission">
           <h2>Submit a fare</h2>
           <p className="tr-note">Sign in to report the fare you paid.</p>
           <button className="tr-primary" type="button" onClick={onSignIn}>Sign in to submit</button>
