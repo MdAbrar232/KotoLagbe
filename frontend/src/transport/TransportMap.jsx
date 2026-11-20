@@ -4,15 +4,20 @@ import L from "leaflet";
 
 import "leaflet/dist/leaflet.css";
 
-// Fix Leaflet's default marker icons when using Vite
+// Import marker images explicitly for Vite
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x,
+// Create an explicit Leaflet marker icon
+const locationIcon = L.icon({
   iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
   shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
 });
 
 export default function TransportMap({
@@ -58,14 +63,13 @@ export default function TransportMap({
               Number(location.latitude),
               Number(location.longitude),
             ]}
+            icon={locationIcon}
           >
             <Popup>
               <div>
                 <strong>{location.name}</strong>
 
-                {location.area && (
-                  <p>{location.area}</p>
-                )}
+                {location.area && <p>{location.area}</p>}
 
                 {onSelectLocation && (
                   <button
