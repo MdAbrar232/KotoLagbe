@@ -4,6 +4,7 @@ import { emptyRoute, transportRequest } from "./api.js";
 import { useTransportList } from "./useTransportList.js";
 import { FareRows, LoadState, LocationDirectory, RequestError } from "./TransportShared.jsx";
 import "./Transport.css";
+import TransportMap from "./TransportMap.jsx";
 
 const sections = [
   ["transport", "Find fares"],
@@ -50,37 +51,132 @@ function RouteFields({ route, setRoute, locations, modes, required = false }) {
   );
 }
 
+
 function FareFinder({ route, setRoute, locations, modes }) {
-  const filters = new URLSearchParams(Object.entries(route).filter(([, value]) => value !== "")).toString();
-  const list = useTransportList(filters ? "fares/?" + filters : "fares/");
+  const filters = new URLSearchParams(
+    Object.entries(route).filter(([, value]) => value !== "")
+  ).toString();
+
+  const list = useTransportList(
+    filters ? "fares/?" + filters : "fares/"
+  );
+
+  function selectLocation(location) {
+    const selectedId = String(location.id);
+
+    setRoute((previous) => {
+      // Select the origin first.
+      if (!previous.origin) {
+        return { ...previous, origin: selectedId };
+      }
+
+      // Select a different destination second.
+      if (!previous.destination) {
+        if (previous.origin === selectedId) return previous;
+
+        return { ...previous, destination: selectedId };
+      }
+
+      // If both are selected, start a new route.
+      return {
+        ...previous,
+        origin: selectedId,
+        destination: "",
+      };
+    });
+  }
+
   return (
     <div className="tr-finder">
-      <section className="tr-panel tr-route-panel" aria-label="Route filters">
+      <section
+        className="tr-panel tr-route-panel"
+        aria-label="Route filters"
+      >
         <div className="tr-heading">
           <h2>Choose a route</h2>
-          {filters && <button type="button" className="tr-link" onClick={() => setRoute(emptyRoute)}>Clear filters</button>}
+
+          {filters && (
+            <button
+              type="button"
+              className="tr-link"
+              onClick={() => setRoute(emptyRoute)}
+            >
+              Clear filters
+            </button>
+          )}
         </div>
-        <RouteFields route={route} setRoute={setRoute} locations={locations} modes={modes} />
+
+        <RouteFields
+          route={route}
+          setRoute={setRoute}
+          locations={locations}
+          modes={modes}
+        />
       </section>
-      <section className="tr-results" aria-label="Approved fares">
+
+      <section
+        className="tr-panel"
+        aria-label="Map location selector"
+      >
+        <div className="tr-heading">
+          <h2>Explore locations on map</h2>
+        </div>
+
+        <p className="tr-note">
+          Click a marker to select your origin, then click
+          another marker to select your destination.
+        </p>
+
+        <TransportMap
+          locations={locations}
+          onSelectLocation={selectLocation}
+        />
+      </section>
+
+      <section
+        className="tr-results"
+        aria-label="Approved fares"
+      >
         <div className="tr-heading">
           <h2>
             Approved fares
             {!list.loading && !list.error && (
-              <span className="tr-result-count">{list.rows.length}</span>
+              <span className="tr-result-count">
+                {list.rows.length}
+              </span>
             )}
           </h2>
-          <button type="button" className="tr-quiet" disabled={list.loading} onClick={list.reload}>Refresh fares</button>
+
+          <button
+            type="button"
+            className="tr-quiet"
+            disabled={list.loading}
+            onClick={list.reload}
+          >
+            Refresh fares
+          </button>
         </div>
+
         <LoadState lists={[list]}>
-          {list.rows.length
-            ? <FareRows fares={list.rows} locations={locations} modes={modes} />
-            : <p className="tr-empty">{filters ? "No approved fares match this route." : "No fares have been approved yet."}</p>}
+          {list.rows.length ? (
+            <FareRows
+              fares={list.rows}
+              locations={locations}
+              modes={modes}
+            />
+          ) : (
+            <p className="tr-empty">
+              {filters
+                ? "No approved fares match this route."
+                : "No fares have been approved yet."}
+            </p>
+          )}
         </LoadState>
       </section>
     </div>
   );
 }
+
 
 function FareForm({ route, setRoute, locations, modes, token, onSignIn }) {
   const [amount, setAmount] = useState("");
