@@ -1,4 +1,3 @@
-
 from rest_framework import serializers
 
 from .models import (
@@ -83,3 +82,16 @@ class RouteFilterSerializer(serializers.Serializer):
     origin = serializers.IntegerField(min_value=1, required=False)
     destination = serializers.IntegerField(min_value=1, required=False)
     transport_mode = serializers.IntegerField(min_value=1, required=False)
+
+
+class RouteFareSummaryQuerySerializer(serializers.Serializer):
+    origin = serializers.IntegerField(min_value=1)
+    destination = serializers.IntegerField(min_value=1)
+
+    def validate(self, attrs):
+        if attrs["origin"] == attrs["destination"]:
+            raise serializers.ValidationError({
+                "destination": "Origin and destination must be different."
+            })
+
+        return attrs

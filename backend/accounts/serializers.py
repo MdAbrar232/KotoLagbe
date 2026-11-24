@@ -1,8 +1,10 @@
-
 from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from places.models import PlaceItem, ItemPriceSubmission
+from transport.models import Location, FareSubmission
 
 from .models import UserProfile, StatusPost
 
@@ -10,7 +12,6 @@ from .models import UserProfile, StatusPost
 class RegisterSerializer(serializers.Serializer):
 
     username = serializers.CharField(max_length=150)
-
     email = serializers.EmailField()
 
     password = serializers.CharField(
@@ -141,7 +142,6 @@ class StatusPostSerializer(serializers.ModelSerializer):
     )
 
     author_full_name = serializers.SerializerMethodField()
-
     author_location = serializers.SerializerMethodField()
 
     class Meta:
@@ -185,3 +185,122 @@ class StatusPostSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+
+# --------------------------------------------------
+# Submission history serializers
+# --------------------------------------------------
+
+class LocationSubmissionSerializer(serializers.ModelSerializer):
+
+    type = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Location
+        fields = [
+            "type",
+            "id",
+            "name",
+            "area",
+            "status",
+            "submitted_at",
+        ]
+
+    def get_type(self, obj):
+        return "location"
+
+
+class FareSubmissionHistorySerializer(serializers.ModelSerializer):
+
+    type = serializers.SerializerMethodField()
+    origin_name = serializers.CharField(
+        source="origin.name",
+        read_only=True
+    )
+    destination_name = serializers.CharField(
+        source="destination.name",
+        read_only=True
+    )
+    transport_mode_name = serializers.CharField(
+        source="transport_mode.name",
+        read_only=True
+    )
+
+    class Meta:
+        model = FareSubmission
+        fields = [
+            "type",
+            "id",
+            "origin",
+            "origin_name",
+            "destination",
+            "destination_name",
+            "transport_mode",
+            "transport_mode_name",
+            "fare",
+            "status",
+            "submitted_at",
+        ]
+
+    def get_type(self, obj):
+        return "fare"
+
+
+class PlaceItemSubmissionSerializer(serializers.ModelSerializer):
+
+    type = serializers.SerializerMethodField()
+    place_name = serializers.CharField(
+        source="place.name",
+        read_only=True
+    )
+    submitted_at = serializers.DateTimeField(
+        source="created_at",
+        read_only=True
+    )
+
+    class Meta:
+        model = PlaceItem
+        fields = [
+            "type",
+            "id",
+            "name",
+            "category",
+            "place",
+            "place_name",
+            "status",
+            "rejection_reason",
+            "submitted_at",
+        ]
+
+    def get_type(self, obj):
+        return "place_item"
+
+
+class ItemPriceSubmissionHistorySerializer(serializers.ModelSerializer):
+
+    type = serializers.SerializerMethodField()
+    item_name = serializers.CharField(
+        source="item.name",
+        read_only=True
+    )
+    place_name = serializers.CharField(
+        source="item.place.name",
+        read_only=True
+    )
+
+    class Meta:
+        model = ItemPriceSubmission
+        fields = [
+            "type",
+            "id",
+            "item",
+            "item_name",
+            "place_name",
+            "price",
+            "status",
+            "rejection_reason",
+            "submitted_at",
+        ]
+
+    def get_type(self, obj):
+        return "item_price"

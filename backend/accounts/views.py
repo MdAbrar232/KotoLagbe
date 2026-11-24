@@ -1,4 +1,3 @@
-
 from rest_framework import generics, status
 from rest_framework.permissions import (
     AllowAny,
@@ -6,7 +5,11 @@ from rest_framework.permissions import (
     IsAuthenticatedOrReadOnly,
 )
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+
+from places.models import PlaceItem, ItemPriceSubmission
+from transport.models import Location, FareSubmission
 
 from .models import UserProfile, StatusPost
 from .serializers import (
@@ -14,6 +17,10 @@ from .serializers import (
     LoginSerializer,
     UserProfileSerializer,
     StatusPostSerializer,
+    LocationSubmissionSerializer,
+    FareSubmissionHistorySerializer,
+    PlaceItemSubmissionSerializer,
+    ItemPriceSubmissionHistorySerializer,
 )
 
 
@@ -76,3 +83,82 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
+
+
+class SubmissionHistoryView(APIView):
+    """
+    Returns all contributions made by the authenticated user,
+    ordered from newest to oldest.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        user = request.user
+        submissions = []
+
+        location_rows = Location.objects.filter(
+            submitted_by=user
+        )
+
+        fare_rows = FareSubmission.objects.filter(
+            submitted_by=user
+        ).select_related(
+            "origin",
+            "destination",
+            "transport_mode",
+        )
+
+        item_rows = PlaceItem.objects.filter(
+            submitted_by=user
+        ).select_related("place")
+
+        price_rows = ItemPriceSubmission.objects.filter(
+            submitted_by=user
+        ).select_related(
+            "item",
+            "item__place",
+        )
+
+        datasets = [
+            (
+                location_rows,
+                LocationSubmissionSerializer,
+                lambda obj: obj.submitted_at,
+            ),
+            (
+                fare_rows,
+                FareSubmissionHistorySerializer,
+                lambda obj: obj.submitted_at,
+            ),
+            (
+                item_rows,
+                PlaceItemSubmissionSerializer,
+                lambda obj: obj.created_at,
+            ),
+            (
+                price_rows,
+                ItemPriceSubmissionHistorySerializer,
+                lambda obj: obj.submitted_at,
+            ),
+        ]
+
+        for queryset, serializer_class, date_getter in datasets:
+            for obj in queryset:
+                serialized = serializer_class(obj).data
+
+                submissions.append({
+                    "_sort_date": date_getter(obj),
+                    "data": serialized,
+                })
+
+        submissions.sort(
+            key=lambda entry: entry["_sort_date"],
+            reverse=True,
+        )
+
+        return Response([
+            entry["data"]
+            for entry in submissions
+        ])
