@@ -1,3 +1,4 @@
+
 from django.db import models
 from django.db.models import Avg, Count, Q
 from django.shortcuts import get_object_or_404
@@ -10,6 +11,8 @@ from rest_framework.permissions import (
     IsAuthenticated,
     IsAuthenticatedOrReadOnly,
 )
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .models import (
     Place,
@@ -17,6 +20,7 @@ from .models import (
     ItemPriceSubmission,
     ItemStatus,
     PlaceReview,
+    Favorite,
 )
 
 from .serializers import (
@@ -25,6 +29,7 @@ from .serializers import (
     SuggestPlaceItemSerializer,
     ItemPriceSubmissionSerializer,
     PlaceReviewSerializer,
+    FavoriteCreateSerializer,
 )
 
 
@@ -222,6 +227,18 @@ class PlaceReviewListCreateAPIView(generics.ListCreateAPIView):
         )
 
 
+class MyPlaceReviewAPIView(generics.RetrieveAPIView):
+    serializer_class = PlaceReviewSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return get_object_or_404(
+            PlaceReview.objects.select_related("place", "user"),
+            place_id=self.kwargs["place_id"],
+            user=self.request.user,
+        )
+
+
 class PlaceReviewDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = PlaceReviewSerializer
     permission_classes = [
@@ -249,4 +266,50 @@ class PlaceReviewDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
             reviewed_by=None,
             reviewed_at=None,
             rejection_reason="",
+        )
+
+
+class FavoriteListCreateAPIView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return places_with_ratings().filter(
+            favorites__user=self.request.user
+        ).distinct()
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return FavoriteCreateSerializer
+        return PlaceSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        favorite = serializer.save()
+
+        return Response(
+            {
+                "id": favorite.id,
+                "place": favorite.place_id,
+                "message": "Place added to favorites.",
+            },
+            status=201,
+        )
+
+
+class FavoriteDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, place_id):
+        favorite = get_object_or_404(
+            Favorite,
+            user=request.user,
+            place_id=place_id,
+        )
+
+        favorite.delete()
+
+        return Response(
+            {"message": "Place removed from favorites."},
+            status=200,
         )

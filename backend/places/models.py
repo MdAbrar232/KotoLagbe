@@ -1,3 +1,4 @@
+
 from decimal import Decimal
 
 from django.conf import settings
@@ -90,7 +91,6 @@ class PlaceItem(models.Model):
 
     reviewed_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -141,7 +141,6 @@ class ItemPriceSubmission(models.Model):
 
     reviewed_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True)
-
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -221,3 +220,34 @@ class PlaceReview(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.place}: {self.rating}/5"
+
+
+class Favorite(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="place_favorites",
+    )
+
+    place = models.ForeignKey(
+        Place,
+        on_delete=models.CASCADE,
+        related_name="favorites",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "place"],
+                name="places_one_favorite_per_user",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.place}"

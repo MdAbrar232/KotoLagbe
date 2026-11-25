@@ -1,3 +1,4 @@
+
 from decimal import Decimal
 
 from django.db import transaction
@@ -10,6 +11,7 @@ from .models import (
     ItemPriceSubmission,
     ItemStatus,
     PlaceReview,
+    Favorite,
 )
 
 
@@ -215,3 +217,29 @@ class PlaceReviewSerializer(serializers.ModelSerializer):
 
     def validate_comment(self, value):
         return value.strip()
+
+
+class FavoriteCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Favorite
+        fields = ["id", "place", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate_place(self, value):
+        user = self.context["request"].user
+
+        if Favorite.objects.filter(
+            user=user,
+            place=value,
+        ).exists():
+            raise serializers.ValidationError(
+                "This place is already in your favorites."
+            )
+
+        return value
+
+    def create(self, validated_data):
+        return Favorite.objects.create(
+            user=self.context["request"].user,
+            **validated_data,
+        )

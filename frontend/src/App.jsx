@@ -1,4 +1,3 @@
-
 import TransportPage from "./transport/TransportPage.jsx";
 import TransportDiscovery from "./transport/TransportDiscovery.jsx";
 import { useEffect, useState } from "react";
@@ -10,8 +9,15 @@ import Profile from "./profile.jsx";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 
+const API_URL = "http://127.0.0.1:8000/api/places";
+
 function App() {
   const [places, setPlaces] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [favoriteError, setFavoriteError] = useState("");
+  const [favoriteBusyIds, setFavoriteBusyIds] = useState(new Set());
+
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [ordering, setOrdering] = useState("");
@@ -32,14 +38,16 @@ function App() {
   const [isStaff, setIsStaff] = useState(false);
   const [formUsername, setFormUsername] = useState("");
 
-  // Determine which page can currently be displayed
+  const favoriteIds = new Set(favorites.map((place) => place.id));
+
   const activePage =
-    (!accessToken && (page === "admin" || page === "profile")) ||
+    (!accessToken &&
+      (page === "admin" || page === "profile" || page === "favorites")) ||
     (page === "admin" && !isStaff)
       ? "home"
       : page;
 
-  // Verify staff permissions
+  // Verify staff permissions.
   useEffect(() => {
     if (!accessToken) {
       return;
@@ -72,7 +80,7 @@ function App() {
     return () => controller.abort();
   }, [accessToken]);
 
-  // Load places
+  // Load places.
   useEffect(() => {
     const controller = new AbortController();
 
@@ -88,7 +96,7 @@ function App() {
 
       try {
         const response = await fetch(
-          `http://127.0.0.1:8000/api/places/?${params.toString()}`,
+          `${API_URL}/?${params.toString()}`,
           { signal: controller.signal }
         );
 
@@ -97,7 +105,7 @@ function App() {
         }
 
         const data = await response.json();
-        setPlaces(data);
+        setPlaces(Array.isArray(data) ? data : data.results || []);
       } catch (err) {
         if (err.name !== "AbortError") {
           setError("Could not load places. Check that Django is running.");
@@ -117,8 +125,55 @@ function App() {
     };
   }, [search, category, ordering]);
 
+  // Load the logged-in user's favorites.
+  useEffect(() => {
+    if (!accessToken) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function fetchFavorites() {
+      setFavoriteLoading(true);
+      setFavoriteError("");
+
+      try {
+        const response = await fetch(`${API_URL}/favorites/`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Could not load your favorites.");
+        }
+
+        const data = await response.json();
+        setFavorites(Array.isArray(data) ? data : data.results || []);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setFavoriteError(err.message);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setFavoriteLoading(false);
+        }
+      }
+    }
+
+    fetchFavorites();
+
+    return () => controller.abort();
+  }, [accessToken]);
+
   function openPage(nextPage) {
     setPage(nextPage);
+  }
+
+  function openPlace(placeId) {
+    setSelectedPlaceId(placeId);
+    setPage("details");
   }
 
   function handleLoginSuccess(data) {
@@ -140,8 +195,148 @@ function App() {
     setAccessToken("");
     setUsername("");
     setIsStaff(false);
+    setFavorites([]);
+    setFavoriteError("");
     setFormUsername("");
     setPage("home");
+  }
+
+  async function toggleFavorite(place) {
+    if (!accessToken) {
+      setPage("login");
+      return;
+    }
+
+    if (favoriteBusyIds.has(place.id)) return;
+
+    setFavoriteBusyIds((previous) => {
+      const next = new Set(previous);
+      next.add(place.id);
+      return next;
+    });
+
+    setFavoriteError("");
+
+    const alreadyFavorite = favoriteIds.has(place.id);
+
+    try {
+      const response = await fetch(
+        alreadyFavorite
+          ? `${API_URL}/favorites/${place.id}/`
+          : `${API_URL}/favorites/`,
+        {
+          method: alreadyFavorite ? "DELETE" : "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            ...(alreadyFavorite
+              ? {}
+              : { "Content-Type": "application/json" }),
+          },
+          ...(alreadyFavorite
+            ? {}
+            : { body: JSON.stringify({ place: place.id }) }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          alreadyFavorite
+            ? "Could not remove this favorite."
+            : "Could not add this favorite."
+        );
+      }
+
+      if (alreadyFavorite) {
+        setFavorites((previous) =>
+          previous.filter((item) => item.id !== place.id)
+        );
+      } else {
+        setFavorites((previous) => {
+          if (previous.some((item) => item.id === place.id)) {
+            return previous;
+          }
+          return [...previous, place];
+        });
+      }
+    } catch (err) {
+      setFavoriteError(err.message);
+    } finally {
+      setFavoriteBusyIds((previous) => {
+        const next = new Set(previous);
+        next.delete(place.id);
+        return next;
+      });
+    }
+  }
+
+  function renderPlaceCard(place) {
+    const isFavorite = favoriteIds.has(place.id);
+    const isBusy = favoriteBusyIds.has(place.id);
+
+    return (
+      <article
+        className="place-card"
+        key={place.id}
+        onClick={() => openPlace(place.id)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openPlace(place.id);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+      >
+        <div className="card-top">
+          <span className="category">{place.category}</span>
+          <span className="area">{place.area}</span>
+        </div>
+
+        <h3>{place.name}</h3>
+
+        <p className="address">
+          {place.address || place.area}
+        </p>
+
+        <p className="description">
+          {place.description || "Discover this place in Dhaka."}
+        </p>
+
+        <div className="card-rating">
+          {Number(place.review_count || 0) > 0
+            ? `★ ${Number(place.average_rating).toFixed(1)} (${place.review_count} reviews)`
+            : "No approved reviews yet"}
+        </div>
+
+        <div className="card-footer">
+          <span className="price-label">Average price</span>
+          <strong>
+            {place.average_price != null
+              ? `৳${Number(place.average_price).toLocaleString("en-BD")}`
+              : "Not available"}
+          </strong>
+        </div>
+
+        <button
+          type="button"
+          className={`favorite-toggle ${isFavorite ? "is-favorite" : ""}`}
+          disabled={isBusy}
+          aria-label={
+            isFavorite ? "Remove from favorites" : "Add to favorites"
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleFavorite(place);
+          }}
+        >
+          {isBusy
+            ? "Saving..."
+            : isFavorite
+              ? "♥ Saved"
+              : "♡ Add to favorites"}
+        </button>
+      </article>
+    );
   }
 
   return (
@@ -160,6 +355,13 @@ function App() {
               <span className="welcome-user">
                 Hi, {username}
               </span>
+
+              <button
+                className="nav-button"
+                onClick={() => openPage("favorites")}
+              >
+                Favorites
+              </button>
 
               <button
                 className="nav-button"
@@ -210,10 +412,59 @@ function App() {
         <Profile accessToken={accessToken} />
       )}
 
+      {activePage === "favorites" && accessToken && (
+        <section className="favorites-page">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">YOUR COLLECTION</p>
+              <h2>My Favorites</h2>
+            </div>
+
+            <span className="count">
+              {favorites.length} saved
+            </span>
+          </div>
+
+          {favoriteLoading && (
+            <p className="message">Loading your favorites...</p>
+          )}
+
+          {favoriteError && (
+            <p className="message error">{favoriteError}</p>
+          )}
+
+          {!favoriteLoading &&
+            !favoriteError &&
+            favorites.length === 0 && (
+              <p className="message">
+                You haven't saved any places yet. Explore places and
+                add your favorites here.
+              </p>
+            )}
+
+          {!favoriteLoading && favorites.length > 0 && (
+            <div className="places-grid">
+              {favorites.map(renderPlaceCard)}
+            </div>
+          )}
+
+          <button
+            className="back-button"
+            onClick={() => openPage("home")}
+          >
+            ← Explore places
+          </button>
+        </section>
+      )}
+
       {activePage === "details" && selectedPlaceId !== null && (
         <PlaceDetails
           placeId={selectedPlaceId}
           onBack={() => openPage("home")}
+          accessToken={accessToken}
+          isFavorite={favoriteIds.has(selectedPlaceId)}
+          onToggleFavorite={(place) => toggleFavorite(place)}
+          onSignIn={() => openPage("login")}
         />
       )}
 
@@ -279,6 +530,10 @@ function App() {
               <p className="message error">{error}</p>
             )}
 
+            {favoriteError && (
+              <p className="message error">{favoriteError}</p>
+            )}
+
             {!loading && !error && places.length === 0 && (
               <p className="message">
                 No places match your search.
@@ -287,60 +542,11 @@ function App() {
 
             {!error && (
               <div className="places-grid">
-                {places.map((place) => (
-                  <article
-                    className="place-card"
-                    key={place.id}
-                    onClick={() => {
-                      setSelectedPlaceId(place.id);
-                      openPage("details");
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedPlaceId(place.id);
-                        openPage("details");
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <div className="card-top">
-                      <span className="category">
-                        {place.category}
-                      </span>
-
-                      <span className="area">
-                        {place.area}
-                      </span>
-                    </div>
-
-                    <h3>{place.name}</h3>
-
-                    <p className="address">
-                      {place.address || place.area}
-                    </p>
-
-                    <p className="description">
-                      {place.description || "Discover this place in Dhaka."}
-                    </p>
-
-                    <div className="card-footer">
-                      <span className="price-label">
-                        Average price
-                      </span>
-
-                      <strong>
-                        {place.average_price != null
-                          ? `৳${Number(place.average_price).toLocaleString("en-BD")}`
-                          : "Not available"}
-                      </strong>
-                    </div>
-                  </article>
-                ))}
+                {places.map(renderPlaceCard)}
               </div>
             )}
           </section>
+
           <TransportDiscovery onExplore={() => openPage("transport")} />
         </>
       )}
