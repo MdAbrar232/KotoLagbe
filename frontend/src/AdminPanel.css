@@ -294,3 +294,16 @@ button.primary {
 td small { display:block; margin-top:3px; color:#8b8d83; font-size:11px; }
 .modal input[type="number"] { appearance:textfield; }
 @media (max-width:600px) { .admin-section-heading { align-items:flex-start; flex-direction:column; } .tabs { overflow-x:auto; padding-bottom:5px; } .tabs button { white-space:nowrap; } }
+
+.admin-records { margin: 0; padding: 0; min-width: 0; border: 0; }
+.admin .back-link { background: transparent; border: 0; padding: .4rem; cursor: pointer; }
+.admin .place-photo-image { width: 130px; }
+.admin [role="alert"] { color: #a12c25; }
+.admin button:disabled { opacity: .55; cursor: default; }
+.admin .modal-backdrop { z-index: 10; }
+.admin .badge + small { margin-top: .5rem; }
+
+.admin .refresh-list { justify-self: start; padding: .5rem .85rem; border: 1px solid #a6b19e; border-radius: 7px; background: #fff; color: #435c3a; cursor: pointer; }
+.admin-filters { display: flex; flex-wrap: wrap; align-items: center; }
+.admin-filters input { flex: 1 1 12rem; }
+.admin-filters select { width: auto; }

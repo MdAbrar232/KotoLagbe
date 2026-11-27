@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .permissions import IsAdmin
 from .views import (
     ActivityLogViewSet,
     FareAdminViewSet,
@@ -13,10 +14,15 @@ from .views import (
     ItemPriceModerationViewSet,
 )
 
-from .review_views import PlaceReviewModerationViewSet
+from .review_views import PlaceReviewModerationViewSet, PlacePhotoModerationViewSet
 
 
-router = DefaultRouter()
+class AdministrationRouter(DefaultRouter):
+    class APIRootView(DefaultRouter.APIRootView):
+        permission_classes = [IsAdmin]
+
+
+router = AdministrationRouter()
 
 router.register("places", PlaceAdminViewSet, basename="admin-places")
 router.register("users", UserAdminViewSet, basename="admin-users")
@@ -27,6 +33,7 @@ router.register(
     basename="admin-transport-modes",
 )
 router.register("fares", FareAdminViewSet, basename="admin-fares")
+router.register("photos", PlacePhotoModerationViewSet, basename="admin-photos")
 router.register("activity", ActivityLogViewSet, basename="admin-activity")
 
 router.register(

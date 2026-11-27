@@ -1,5 +1,7 @@
 
-const API_URL = "http://127.0.0.1:8000/api/accounts";
+import { API_BASE } from "./api.js";
+
+const API_URL = API_BASE + "/accounts";
 
 async function apiRequest(endpoint, body) {
   const response = await fetch(`${API_URL}/${endpoint}/`, {

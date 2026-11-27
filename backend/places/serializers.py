@@ -5,6 +5,8 @@ from django.db import transaction
 from django.db.models import Avg, Q
 from rest_framework import serializers
 
+from transport.models import LocationStatus
+
 from .models import (
     Place,
     PlaceItem,
@@ -16,6 +18,7 @@ from .models import (
 
 
 class PlaceSerializer(serializers.ModelSerializer):
+    show_unapproved_locations = False
     location_name = serializers.CharField(
         source="location.name",
         read_only=True,
@@ -43,6 +46,18 @@ class PlaceSerializer(serializers.ModelSerializer):
         model = Place
         fields = "__all__"
         read_only_fields = ["id", "created_at"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if (not self.show_unapproved_locations and instance.location_id
+                and instance.location.status != LocationStatus.APPROVED):
+            data.update(location=None, location_name=None)
+        return data
+
+    def validate_location(self, value):
+        if value and value.status != LocationStatus.APPROVED and value.pk != getattr(self.instance, "location_id", None):
+            raise serializers.ValidationError("Choose an approved location.")
+        return value
 
     def validate_parent(self, value):
         if value is None:
@@ -102,6 +117,8 @@ class PlaceItemSerializer(serializers.ModelSerializer):
 
 
 class SuggestPlaceItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    status = serializers.CharField(read_only=True)
     place = serializers.PrimaryKeyRelatedField(
         queryset=Place.objects.all()
     )

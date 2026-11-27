@@ -12,6 +12,7 @@ venv/
 # Django
 db.sqlite3
 staticfiles/
+backend/media/
 
 # Node.js / React
 node_modules/

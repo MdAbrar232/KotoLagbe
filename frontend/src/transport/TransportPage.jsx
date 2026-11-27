@@ -5,6 +5,8 @@ import { useTransportList } from "./useTransportList.js";
 import { FareRows, LoadState, LocationDirectory, RequestError } from "./TransportShared.jsx";
 import "./Transport.css";
 import TransportMap from "./TransportMap.jsx";
+import LocationSuggestion from "./LocationSuggestion.jsx";
+import { useApiData } from "../services/useApiData.js";
 
 const sections = [
   ["transport", "Find fares"],
@@ -51,6 +53,22 @@ function RouteFields({ route, setRoute, locations, modes, required = false }) {
   );
 }
 
+
+function RouteSummary({ route, modes }) {
+  const query = new URLSearchParams({ origin: route.origin, destination: route.destination });
+  const summary = useApiData("/transport/fares/summary/?" + query);
+  const mode = modes.find((entry) => String(entry.id) === route.transport_mode);
+  const options = (summary.data?.transport_options ?? []).filter((option) => !mode || mode.name === option.transport_mode);
+  return <section className="tr-panel" aria-label="Route fare summary">
+    <h2>Fare range by transport mode</h2>
+    {summary.loading && <p role="status">Loading fare range…</p>}
+    <RequestError error={summary.error} onRetry={summary.reload} />
+    {!summary.loading && !summary.error && !options.length && <p>No approved fares for this route.</p>}
+    {options.map((option) => <p key={option.transport_mode}><strong>{option.transport_mode}</strong>
+      {" · ৳" + option.minimum_fare + "–৳" + option.maximum_fare + " · Average ৳" + option.average_fare}
+      {" (" + option.submission_count + " reported)"}</p>)}
+  </section>;
+}
 
 function FareFinder({ route, setRoute, locations, modes }) {
   const filters = new URLSearchParams(
@@ -133,6 +151,7 @@ function FareFinder({ route, setRoute, locations, modes }) {
         />
       </section>
 
+      {route.origin && route.destination && <RouteSummary route={route} modes={modes} />}
       <section
         className="tr-results"
         aria-label="Approved fares"
@@ -291,6 +310,7 @@ export default function TransportPage({ token, onSignedIn, onRegister, onBack })
           {directory && <section className="tr-panel">
             <div className="tr-heading"><h2>Transport locations</h2></div>
             <LocationDirectory locations={locations.rows} />
+            <LocationSuggestion token={token} onSignIn={onSignIn} />
           </section>}
           {page === "transport" && <FareFinder route={route} setRoute={setRoute} locations={locations.rows} modes={modes.rows} />}
           {submit && <FareForm route={route} setRoute={setRoute} locations={locations.rows} modes={modes.rows} token={token} onSignIn={onSignIn} />}

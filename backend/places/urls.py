@@ -1,6 +1,7 @@
 
 from django.urls import path
 
+from .photos import PlacePhotoContentView, PlacePhotoDetailView, PlacePhotoListCreateView
 from .views import (
     PlaceListCreateAPIView,
     PlaceDetailAPIView,
@@ -25,6 +26,10 @@ urlpatterns = [
         FavoriteDeleteAPIView.as_view(),
         name="favorite-delete",
     ),
+
+    path("<int:place_id>/photos/", PlacePhotoListCreateView.as_view(), name="place-photo-list"),
+    path("<int:place_id>/photos/<int:pk>/", PlacePhotoDetailView.as_view(), name="place-photo-detail"),
+    path("<int:place_id>/photos/<int:pk>/content/", PlacePhotoContentView.as_view(), name="place-photo-content"),
 
     path("items/", PlaceItemListAPIView.as_view(), name="item-list"),
     path("items/suggest/", SuggestPlaceItemAPIView.as_view(), name="item-suggest"),

@@ -20,11 +20,13 @@ from transport.models import (
 )
 from places.models import (
     PlaceItem,
+    PlacePhoto,
+    PlaceReview,
     ItemPriceSubmission,
     ItemStatus,
 )
 
-from .models import AdminActivityLog
+from .models import AdminActivityLog, record_activity
 from .permissions import IsAdmin
 from .serializers import (
     AdminActivityLogSerializer,
@@ -47,16 +49,6 @@ USER_FIELDS = {f.name for f in User._meta.get_fields()}
 
 HAS_STATUS = "status" in PLACE_FIELDS
 PENDING, APPROVED, REJECTED = "pending", "approved", "rejected"
-
-
-def record_activity(request, action_name, entity, obj, summary):
-    AdminActivityLog.objects.create(
-        actor=request.user if request.user.is_authenticated else None,
-        action=action_name,
-        entity=entity,
-        entity_id=str(getattr(obj, "pk", "")),
-        summary=summary[:255],
-    )
 
 
 class AuditedModelViewSet(viewsets.ModelViewSet):
@@ -128,7 +120,7 @@ class PlaceAdminViewSet(AuditedModelViewSet):
     ordering = ("-pk",)
 
     def get_queryset(self):
-        queryset = Place.objects.all()
+        queryset = Place.objects.select_related("location", "parent").all()
         wanted = self.request.query_params.get("status")
 
         if wanted and HAS_STATUS:
@@ -195,7 +187,7 @@ class LocationAdminViewSet(AuditedModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        location = serializer.save(status=LocationStatus.APPROVED)
+        location = serializer.save(status=LocationStatus.APPROVED, submitted_by=self.request.user)
 
         record_activity(
             self.request,
@@ -205,6 +197,7 @@ class LocationAdminViewSet(AuditedModelViewSet):
             f"Created approved location: {location}",
         )
 
+    @transaction.atomic
     def _set_status(self, request, value):
         location = self.get_object()
         location.status = value
@@ -312,8 +305,15 @@ class FareAdminViewSet(
 
         return queryset
 
+    @transaction.atomic
     def _set_status(self, request, value):
         fare = self.get_object()
+        if value == FareStatus.APPROVED and (
+            not fare.transport_mode.is_active or fare.origin.status != LocationStatus.APPROVED
+            or fare.destination.status != LocationStatus.APPROVED
+        ):
+            return Response({"detail": "Approval requires two approved locations and an active transport mode."},
+                            status=status.HTTP_400_BAD_REQUEST)
         fare.status = value
         fare.save(update_fields=["status"])
 
@@ -705,6 +705,8 @@ class StatsView(APIView):
                 status=FareStatus.REJECTED
             ).count(),
 
+            "pending_reviews": PlaceReview.objects.filter(status=ItemStatus.PENDING).count(),
+            "pending_photos": PlacePhoto.objects.filter(status=ItemStatus.PENDING).count(),
             "items": PlaceItem.objects.count(),
             "pending_items": PlaceItem.objects.filter(
                 status=ItemStatus.PENDING

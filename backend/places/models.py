@@ -3,7 +3,9 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
-from django.db import models
+from django.db import models, transaction
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 
 class Place(models.Model):
@@ -251,3 +253,31 @@ class Favorite(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.place}"
+
+
+class PlacePhoto(models.Model):
+    place = models.ForeignKey(Place, on_delete=models.CASCADE, related_name="photos")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="place_photos")
+    image = models.ImageField(upload_to="place_photos/%Y/%m/")
+    caption = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=8, choices=ItemStatus.choices, default=ItemStatus.PENDING, db_index=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   blank=True, related_name="moderated_place_photos")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        indexes = [models.Index(fields=["place", "status"])]
+
+    def __str__(self):
+        return f"Photo {self.pk} of {self.place}"
+
+
+@receiver(post_delete, sender=PlacePhoto)
+def remove_photo_file(sender, instance, using, **kwargs):
+    # Defer the storage change so a rolled-back deletion keeps the original file.
+    name, storage = instance.image.name, instance.image.storage
+    if name:
+        transaction.on_commit(lambda: storage.delete(name), using=using)

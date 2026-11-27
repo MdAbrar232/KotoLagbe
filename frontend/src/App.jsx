@@ -9,7 +9,9 @@ import Profile from "./profile.jsx";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 
-const API_URL = "http://127.0.0.1:8000/api/places";
+import { API_BASE } from "./services/api.js";
+
+const API_URL = API_BASE + "/places";
 
 function App() {
   const [places, setPlaces] = useState([]);
@@ -58,7 +60,7 @@ function App() {
     async function verifyStaff() {
       try {
         const response = await fetch(
-          "http://127.0.0.1:8000/api/admin/stats/",
+          API_BASE + "/admin/stats/",
           {
             headers: {
               Authorization: `Bearer ${accessToken}`,
@@ -84,6 +86,7 @@ function App() {
   useEffect(() => {
     const controller = new AbortController();
 
+    if (activePage !== "home") return;
     async function fetchPlaces() {
       setLoading(true);
       setError("");
@@ -123,11 +126,11 @@ function App() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [search, category, ordering]);
+  }, [search, category, ordering, activePage]);
 
   // Load the logged-in user's favorites.
   useEffect(() => {
-    if (!accessToken) {
+    if (!accessToken || !["home", "favorites", "details"].includes(activePage)) {
       return;
     }
 
@@ -165,7 +168,7 @@ function App() {
     fetchFavorites();
 
     return () => controller.abort();
-  }, [accessToken]);
+  }, [accessToken, activePage]);
 
   function openPage(nextPage) {
     setPage(nextPage);
@@ -406,7 +409,7 @@ function App() {
         </div>
       </nav>
 
-      {activePage === "admin" && isStaff && <AdminPanel />}
+      {activePage === "admin" && isStaff && <AdminPanel token={accessToken} username={username} onBack={() => openPage("home")} onSignIn={() => openPage("login")} />}
 
       {activePage === "profile" && accessToken && (
         <Profile accessToken={accessToken} />
@@ -459,6 +462,7 @@ function App() {
 
       {activePage === "details" && selectedPlaceId !== null && (
         <PlaceDetails
+          key={selectedPlaceId}
           placeId={selectedPlaceId}
           onBack={() => openPage("home")}
           accessToken={accessToken}

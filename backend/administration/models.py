@@ -15,3 +15,13 @@ class AdminActivityLog(models.Model):
 
     def __str__(self):
         return f"{self.actor or 'Unknown admin'}: {self.action} {self.entity} {self.entity_id}"
+
+
+def record_activity(request, action_name, entity, obj, summary):
+    AdminActivityLog.objects.create(
+        actor=request.user if request.user.is_authenticated else None,
+        action=action_name,
+        entity=entity,
+        entity_id=str(getattr(obj, "pk", "")),
+        summary=summary[:255],
+    )

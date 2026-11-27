@@ -128,13 +128,18 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Uploaded photos are served by the permission-checked Places API.
+MEDIA_ROOT = os.environ.get("DJANGO_MEDIA_ROOT", BASE_DIR / "media")
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
+    origin.strip() for origin in os.getenv(
+        "DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",") if origin.strip()
 ]
 
 REST_FRAMEWORK = {

@@ -5,6 +5,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from places.models import PlaceItem, ItemPriceSubmission
+from places.serializers import PlaceSerializer
 from transport.models import FareSubmission, Location, TransportMode
 from .models import AdminActivityLog
 
@@ -13,10 +14,11 @@ Place = apps.get_model("places", "Place")
 User = get_user_model()
 
 
-class PlaceAdminSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Place
-        fields = "__all__"
+class PlaceAdminSerializer(PlaceSerializer):
+    show_unapproved_locations = True
+
+    class Meta(PlaceSerializer.Meta):
+        fields = [field.name for field in Place._meta.fields]
 
 
 class LocationAdminSerializer(serializers.ModelSerializer):
@@ -262,6 +264,7 @@ class PlaceItemModerationSerializer(serializers.ModelSerializer):
 
 
 class ItemPriceModerationSerializer(serializers.ModelSerializer):
+    item_status = serializers.CharField(source="item.status", read_only=True)
     item_name = serializers.CharField(
         source="item.name", read_only=True
     )
@@ -274,7 +277,7 @@ class ItemPriceModerationSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemPriceSubmission
         fields = [
-            "id", "item", "item_name", "place_name",
+            "id", "item", "item_name", "item_status", "place_name",
             "submitted_by", "contributor", "price", "status",
             "reviewed_by", "reviewer", "reviewed_at",
             "rejection_reason", "submitted_at",

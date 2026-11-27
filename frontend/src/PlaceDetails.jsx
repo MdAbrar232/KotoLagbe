@@ -1,7 +1,11 @@
 ﻿import { useEffect, useState } from "react";
 import "./PlaceDetails.css";
 
-const API_URL = "http://127.0.0.1:8000/api/places";
+import { API_BASE } from "./services/api.js";
+import PlaceItems from "./PlaceItems.jsx";
+import PlacePhotos from "./PlacePhotos.jsx";
+
+const API_URL = API_BASE + "/places";
 
 function PlaceDetails({
   placeId,
@@ -263,6 +267,11 @@ function PlaceDetails({
         </div>
 
         <div className="details-divider" />
+
+        {place.location_name && <p>Transport location: {place.location_name}</p>}
+        {place.parent_name && <p>Part of {place.parent_name}</p>}
+        <PlaceItems placeId={placeId} token={accessToken} onSignIn={onSignIn} />
+        <PlacePhotos placeId={placeId} token={accessToken} onSignIn={onSignIn} />
 
         <section className="reviews-section">
           <h2>Reviews</h2>

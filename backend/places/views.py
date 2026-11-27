@@ -1,5 +1,5 @@
 
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Avg, Count, Q
 from django.shortcuts import get_object_or_404
 
@@ -14,6 +14,9 @@ from rest_framework.permissions import (
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from administration.models import record_activity
+from administration.permissions import IsAdmin
+from transport.models import LocationStatus
 from .models import (
     Place,
     PlaceItem,
@@ -63,6 +66,14 @@ def places_with_ratings():
 class PlaceListCreateAPIView(generics.ListCreateAPIView):
     serializer_class = PlaceSerializer
 
+    def get_permissions(self):
+        return [IsAdmin()] if self.request.method == "POST" else [AllowAny()]
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        place = serializer.save()
+        record_activity(self.request, "created", "place", place, f"Created place: {place}")
+
     def get_queryset(self):
         queryset = places_with_ratings()
         params = self.request.query_params
@@ -96,7 +107,7 @@ class PlaceListCreateAPIView(generics.ListCreateAPIView):
         if location:
             try:
                 location_id = int(location)
-                queryset = queryset.filter(location_id=location_id)
+                queryset = queryset.filter(location_id=location_id, location__status=LocationStatus.APPROVED)
             except ValueError:
                 raise ValidationError({
                     "location": "Provide a valid location ID."
@@ -145,7 +156,11 @@ class PlaceItemListAPIView(generics.ListAPIView):
         category = self.request.query_params.get("category", "").strip()
 
         if place:
-            queryset = queryset.filter(place_id=place)
+            try:
+                place_id = int(place)
+            except ValueError:
+                raise ValidationError({"place": "Provide a numeric place ID."})
+            queryset = queryset.filter(place_id=place_id)
 
         if search:
             queryset = queryset.filter(name__icontains=search)
