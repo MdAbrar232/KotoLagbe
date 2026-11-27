@@ -1,153 +1,298 @@
+
 from io import BytesIO
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from unittest.mock import patch
+import tempfile
 from urllib.parse import urlsplit
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import transaction
 from django.test import override_settings
+from django.urls import reverse
 from PIL import Image
-from rest_framework.test import APITestCase, APIClient
+from rest_framework import status
+from rest_framework.test import APITestCase
 
-from administration.models import AdminActivityLog
-from .models import Place, PlacePhoto
+from .models import ItemStatus, Place, PlacePhoto
 
-
-def picture(name="sample.png", image_format="PNG"):
-    stream = BytesIO()
-    Image.new("RGB", (8, 5), "green").save(stream, image_format)
-    return SimpleUploadedFile(name, stream.getvalue(), content_type="application/octet-stream")
+User = get_user_model()
 
 
-class PhotoWorkflowTests(APITestCase):
-    @classmethod
-    def setUpTestData(cls):
-        users = get_user_model().objects
-        cls.owner = users.create_user("photographer")
-        cls.other = users.create_user("visitor")
-        cls.staff = users.create_user("photo-moderator", is_staff=True)
-        cls.place = Place.objects.create(name="Market", category="Shopping", area="Dhaka")
-        cls.second = Place.objects.create(name="Park", category="Outdoors", area="Dhaka")
+def make_test_image(name="place-photo.jpg", image_format="JPEG"):
+    output = BytesIO()
+    Image.new("RGB", (12, 12), color=(80, 120, 160)).save(
+        output,
+        format=image_format,
+    )
+    content_type = {
+        "JPEG": "image/jpeg",
+        "PNG": "image/png",
+        "WEBP": "image/webp",
+    }[image_format]
 
+    return SimpleUploadedFile(
+        name,
+        output.getvalue(),
+        content_type=content_type,
+    )
+
+
+def close_file_response(response):
+    closers = list(getattr(response, "_resource_closers", []))
+
+    for closer in closers:
+        closer()
+
+    response._resource_closers = []
+
+    file_handle = getattr(response, "file_to_stream", None)
+    if file_handle is not None and not getattr(file_handle, "closed", False):
+        file_handle.close()
+
+
+class PlacePhotoSubmissionTests(APITestCase):
     def setUp(self):
-        folder = TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        self.media = Path(folder.name)
-        self.enterContext(override_settings(MEDIA_ROOT=self.media))
-        self.member, self.visitor, self.admin = APIClient(), APIClient(), APIClient()
-        for client, user in [(self.member, self.owner), (self.visitor, self.other), (self.admin, self.staff)]:
-            client.force_authenticate(user)
-        self.path = f"/api/places/{self.place.pk}/photos/"
+        self.media_dir = tempfile.TemporaryDirectory()
+        media_override = override_settings(MEDIA_ROOT=self.media_dir.name)
+        media_override.enable()
+        self.addCleanup(media_override.disable)
+        self.addCleanup(self.media_dir.cleanup)
 
-    def upload(self, client=None):
-        response = (client or self.member).post(self.path, {"image": picture(), "caption": "Entrance",
-            "place": self.second.pk, "user": self.other.pk, "status": "approved"}, format="multipart")
-        self.assertEqual(response.status_code, 201, response.data)
-        return response.data
+        self.user = User.objects.create_user(
+            username="photo_user",
+            password="test-password-123",
+        )
+        self.other_user = User.objects.create_user(
+            username="another_photo_user",
+            password="test-password-456",
+        )
+        self.place = Place.objects.create(
+            name="Test Cafe",
+            category="Cafe",
+            area="Dhanmondi",
+        )
+        self.url = reverse(
+            "place-photo-list-create",
+            args=[self.place.pk],
+        )
 
-    def test_private_upload_to_public_display_and_removal(self):
-        photo = self.upload()
-        detail = self.path + str(photo["id"]) + "/"
-        content = urlsplit(photo["image_url"]).path
-        self.assertEqual((photo["place"], photo["user"], photo["status"]), (self.place.pk, self.owner.pk, "pending"))
-        self.assertNotIn("image", photo)
-        self.assertEqual(self.client.get(self.path).data, [])
-        self.assertEqual(self.member.get(self.path).data[0]["username"], self.owner.username)
-        self.assertEqual(self.client.get(content, HTTP_ACCEPT="image/jpeg").status_code, 404)
-        self.assertEqual(self.visitor.get(detail).status_code, 404)
-        self.assertEqual(self.member.get(detail.replace(f"/places/{self.place.pk}/", f"/places/{self.second.pk}/")).status_code, 404)
-        self.assertEqual(self.admin.get("/api/admin/stats/").data["pending_photos"], 1)
-        row = self.admin.get("/api/admin/photos/?status=pending").data[0]
-        self.assertEqual((row["place_name"], row["caption"]), (self.place.name, "Entrance"))
-        action = f"/api/admin/photos/{photo['id']}/"
-        self.assertEqual(self.member.post(action + "approve/").status_code, 403)
-        self.assertEqual(self.admin.post(action + "reject/", {"reason": " "}).status_code, 400)
-        self.assertEqual(self.admin.post(action + "reject/", {"reason": "Image is unclear"}).status_code, 200)
-        self.assertEqual(self.member.get(detail).data["rejection_reason"], "Image is unclear")
-        self.assertEqual(self.visitor.get(content).status_code, 404)
-        self.assertEqual(self.admin.post(action + "approve/").status_code, 200)
-        self.assertEqual(self.client.get(self.path).data[0]["status"], "approved")
-        self.assertFalse(self.visitor.get(detail).data["can_delete"])
-        self.assertEqual(self.visitor.delete(detail).status_code, 403)
-        self.assertEqual(self.client.delete(detail).status_code, 401)
-        data = self.client.get(content, HTTP_ACCEPT="image/jpeg")
-        self.assertEqual((data.status_code, data["Content-Type"]), (200, "image/jpeg"))
-        with Image.open(BytesIO(b"".join(data.streaming_content))) as saved:
-            self.assertEqual((saved.format, saved.size), ("JPEG", (8, 5)))
-        self.assertEqual(self.client.get(f"/api/places/{self.second.pk}/photos/").data, [])
-        filename = PlacePhoto.objects.get(pk=photo["id"]).image.path
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(self.admin.delete(detail).status_code, 204)
-        self.assertFalse(Path(filename).exists())
-        self.assertEqual(self.client.get(content).status_code, 404)
-        self.assertTrue(AdminActivityLog.objects.filter(entity="place photo", action="deleted", actor=self.staff).exists())
+    def test_authenticated_user_can_upload_photo_for_place(self):
+        self.client.force_authenticate(self.user)
 
-    def test_input_validation_and_missing_place(self):
-        self.assertEqual(self.client.post(self.path, {"image": picture()}, format="multipart").status_code, 401)
-        self.assertEqual(self.member.post(self.path, {"caption": "No file"}, format="multipart").status_code, 400)
-        invalid = SimpleUploadedFile("sample.jpg", b"plain text", content_type="image/jpeg")
-        self.assertEqual(self.member.post(self.path, {"image": invalid}, format="multipart").status_code, 400)
-        with patch("places.photos.MAX_UPLOAD_BYTES", 12):
-            self.assertEqual(self.member.post(self.path, {"image": picture()}, format="multipart").status_code, 400)
-        with patch("places.photos.MAX_PIXELS", 10):
-            self.assertEqual(self.member.post(self.path, {"image": picture()}, format="multipart").status_code, 400)
-        self.assertEqual(self.member.post("/api/places/999999/photos/", {"image": picture()}, format="multipart").status_code, 404)
-        self.assertFalse(PlacePhoto.objects.exists())
-        self.assertFalse(any(self.media.rglob("*.jpg")))
+        response = self.client.post(
+            self.url,
+            {
+                "image_upload": make_test_image(),
+                "caption": "Front seating area",
+            },
+            format="multipart",
+        )
 
-    def test_owner_delete_cascade_and_rollback(self):
-        photo = self.upload()
-        file = Path(PlacePhoto.objects.get(pk=photo["id"]).image.path)
-        with transaction.atomic():
-            self.place.delete()
-            transaction.set_rollback(True)
-        self.assertTrue(file.exists())
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(self.member.delete(self.path + str(photo["id"]) + "/").status_code, 204)
-        self.assertFalse(file.exists())
-        another = self.upload()
-        file = Path(PlacePhoto.objects.get(pk=another["id"]).image.path)
-        with self.captureOnCommitCallbacks(execute=True):
-            Place.objects.get(pk=another["place"]).delete()
-        self.assertFalse(file.exists())
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            response.data,
+        )
 
-    def test_still_formats_and_storage_failures(self):
-        for image_format in ("JPEG", "WEBP"):
-            with self.subTest(image_format=image_format):
-                response = self.member.post(self.path, {"image": picture(image_format=image_format)}, format="multipart")
-                self.assertEqual(response.status_code, 201, response.data)
-        gif = self.member.post(self.path, {"image": picture(image_format="GIF")}, format="multipart")
-        self.assertEqual(gif.status_code, 400)
-        before = set(self.media.rglob("*.jpg"))
-        storage = PlacePhoto._meta.get_field("image").storage
-        with patch.object(storage, "save", side_effect=OSError("unavailable")):
-            result = self.member.post(self.path, {"image": picture()}, format="multipart")
-        self.assertEqual(result.status_code, 503)
-        self.assertEqual(PlacePhoto.objects.count(), 2)
-        self.assertEqual(set(self.media.rglob("*.jpg")), before)
+        photo = PlacePhoto.objects.get(pk=response.data["id"])
+        self.assertEqual(photo.place, self.place)
+        self.assertEqual(photo.submitted_by, self.user)
+        self.assertEqual(photo.status, ItemStatus.PENDING)
+        self.assertEqual(photo.caption, "Front seating area")
 
-    def test_reversing_approval_also_restricts_the_existing_image_url(self):
-        photo = self.upload()
-        action = f"/api/admin/photos/{photo['id']}/"
-        content = urlsplit(photo["image_url"]).path
-        self.admin.post(action + "approve/")
-        response = self.client.get(content)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("no-store", response["Cache-Control"])
-        b"".join(response.streaming_content)
-        self.admin.post(action + "reject/", {"reason": "Wrong location."})
-        self.assertEqual(self.client.get(content).status_code, 404)
-        self.assertEqual(self.member.get(self.path).data[0]["rejection_reason"], "Wrong location.")
+    def test_anonymous_user_cannot_upload_photo(self):
+        response = self.client.post(
+            self.url,
+            {"image_upload": make_test_image()},
+            format="multipart",
+        )
 
-    def test_staff_upload_requires_another_moderator(self):
-        photo = self.upload(self.admin)
-        self.assertEqual(self.admin.post(f"/api/admin/photos/{photo['id']}/approve/").status_code, 403)
-        self.assertEqual(self.client.get(self.path).data, [])
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        self.assertEqual(PlacePhoto.objects.count(), 0)
 
-    def test_missing_stored_file_has_an_http_error(self):
-        photo = self.upload()
-        Path(PlacePhoto.objects.get(pk=photo["id"]).image.path).unlink()
-        response = self.member.get(urlsplit(photo["image_url"]).path, HTTP_ACCEPT="image/jpeg")
-        self.assertEqual(response.status_code, 404)
+    def test_public_list_only_returns_approved_photos(self):
+        pending = PlacePhoto.objects.create(
+            place=self.place,
+            submitted_by=self.user,
+            image=make_test_image("pending.jpg"),
+            status=ItemStatus.PENDING,
+        )
+
+        approved = PlacePhoto.objects.create(
+            place=self.place,
+            submitted_by=self.other_user,
+            image=make_test_image("approved.jpg"),
+            status=ItemStatus.APPROVED,
+        )
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [row["id"] for row in response.data],
+            [approved.pk],
+        )
+        self.assertNotIn(
+            pending.pk,
+            [row["id"] for row in response.data],
+        )
+
+    def test_pending_photo_file_is_private_to_owner_and_staff(self):
+        photo = PlacePhoto.objects.create(
+            place=self.place,
+            submitted_by=self.user,
+            image=make_test_image("private-pending.jpg"),
+            status=ItemStatus.PENDING,
+        )
+
+        image_url = reverse(
+            "place-photo-image",
+            args=[photo.pk],
+        )
+
+        anonymous_response = self.client.get(image_url)
+        self.assertEqual(
+            anonymous_response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.client.force_authenticate(self.other_user)
+        other_user_response = self.client.get(image_url)
+        self.assertEqual(
+            other_user_response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.client.force_authenticate(self.user)
+        owner_response = self.client.get(image_url)
+        self.addCleanup(close_file_response, owner_response)
+
+        self.assertEqual(
+            owner_response.status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(
+            owner_response["Content-Type"],
+            "image/jpeg",
+        )
+
+    def test_approved_photo_file_is_public(self):
+        photo = PlacePhoto.objects.create(
+            place=self.place,
+            submitted_by=self.user,
+            image=make_test_image("public-approved.jpg"),
+            status=ItemStatus.APPROVED,
+        )
+
+        response = self.client.get(
+            reverse("place-photo-image", args=[photo.pk])
+        )
+        self.addCleanup(close_file_response, response)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+
+    def test_user_can_only_see_their_own_photo_submissions(self):
+        own_photo = PlacePhoto.objects.create(
+            place=self.place,
+            submitted_by=self.user,
+            image=make_test_image("own.jpg"),
+        )
+
+        other_photo = PlacePhoto.objects.create(
+            place=self.place,
+            submitted_by=self.other_user,
+            image=make_test_image("other.jpg"),
+        )
+
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get(
+            reverse("my-place-photos", args=[self.place.pk])
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [row["id"] for row in response.data],
+            [own_photo.pk],
+        )
+        self.assertNotIn(
+            other_photo.pk,
+            [row["id"] for row in response.data],
+        )
+
+        signed_image = urlsplit(response.data[0]["image"])
+        self.client.force_authenticate(user=None)
+
+        image_response = self.client.get(
+            f"{signed_image.path}?{signed_image.query}"
+        )
+        self.addCleanup(close_file_response, image_response)
+
+        self.assertEqual(
+            image_response.status_code,
+            status.HTTP_200_OK,
+        )
+
+    def test_non_image_upload_is_rejected(self):
+        self.client.force_authenticate(self.user)
+
+        invalid_file = SimpleUploadedFile(
+            "not-an-image.jpg",
+            b"this is not an image",
+            content_type="image/jpeg",
+        )
+
+        response = self.client.post(
+            self.url,
+            {"image_upload": invalid_file},
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(PlacePhoto.objects.count(), 0)
+
+    def test_image_extension_must_match_actual_format(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            self.url,
+            {
+                "image_upload": make_test_image(
+                    "wrong-extension.png",
+                    "JPEG",
+                )
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(PlacePhoto.objects.count(), 0)
+
+    def test_upload_larger_than_five_megabytes_is_rejected(self):
+        self.client.force_authenticate(self.user)
+
+        large_file = SimpleUploadedFile(
+            "large-photo.jpg",
+            b"x" * (5 * 1024 * 1024 + 1),
+            content_type="image/jpeg",
+        )
+
+        response = self.client.post(
+            self.url,
+            {"image_upload": large_file},
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(PlacePhoto.objects.count(), 0)

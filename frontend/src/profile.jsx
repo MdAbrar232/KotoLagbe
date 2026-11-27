@@ -2,10 +2,7 @@
 import { useEffect, useState } from "react";
 import "./profile.css";
 
-import { API_BASE } from "./services/api.js";
-import { useApiData } from "./services/useApiData.js";
-
-const API_URL = API_BASE + "/accounts";
+const API_URL = "http://127.0.0.1:8000/api/accounts";
 
 function getInitials(name, username) {
   const value = (name || username || "U").trim();
@@ -15,24 +12,6 @@ function getInitials(name, username) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
-}
-
-function ContributionHistory({ token }) {
-  const list = useApiData("/accounts/submissions/", token);
-  return <section className="profile-note contributions">
-    <h3>My contributions</h3>
-    {list.loading && <p role="status">Loading contributions…</p>}
-    {list.error && <p role="alert">{list.error.message}</p>}
-    {!list.loading && !list.error && !list.rows.length && <p>No contributions yet.</p>}
-    <ul>{list.rows.map((entry) => <li key={entry.type + "-" + entry.id}>
-      <strong>{entry.name || entry.item_name || entry.transport_mode_name}</strong>
-      {entry.place_name && " · " + entry.place_name}
-      {entry.type === "fare" && " · " + entry.origin_name + " → " + entry.destination_name + " · ৳" + entry.fare}
-      {entry.type === "item_price" && " · ৳" + entry.price}
-      {" · "}<span className={"status-" + entry.status}>{entry.status}</span>
-      {entry.rejection_reason && <p>{entry.rejection_reason}</p>}
-    </li>)}</ul>
-  </section>;
 }
 
 function Profile({ accessToken }) {
@@ -391,7 +370,10 @@ function Profile({ accessToken }) {
           </div>
         </div>
 
-        <ContributionHistory token={accessToken} />
+        <div className="profile-note">
+          Your profile is your identity in the KotoLagbe community.
+          Share your interests and the places you love.
+        </div>
 
       </div>
     </section>
