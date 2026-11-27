@@ -4,7 +4,8 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
 
-from places.models import PlaceItem, ItemPriceSubmission
+from places.models import PlaceItem, ItemPriceSubmission, PlacePhoto
+from places.serializers import place_photo_image_url
 from transport.models import FareSubmission, Location, TransportMode
 from .models import AdminActivityLog
 
@@ -13,10 +14,40 @@ Place = apps.get_model("places", "Place")
 User = get_user_model()
 
 
+
 class PlaceAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = Place
         fields = "__all__"
+
+    def validate_parent(self, value):
+        if value is None:
+            return value
+
+        if self.instance and value.pk == self.instance.pk:
+            raise serializers.ValidationError(
+                "A place cannot be its own parent."
+            )
+
+        current = value
+        visited = set()
+
+        while current is not None:
+            if self.instance and current.pk == self.instance.pk:
+                raise serializers.ValidationError(
+                    "This relationship would create a circular hierarchy."
+                )
+
+            if current.pk in visited:
+                raise serializers.ValidationError(
+                    "The existing place hierarchy contains a cycle."
+                )
+
+            visited.add(current.pk)
+            current = current.parent
+
+        return value
+
 
 
 class LocationAdminSerializer(serializers.ModelSerializer):
@@ -265,6 +296,9 @@ class ItemPriceModerationSerializer(serializers.ModelSerializer):
     item_name = serializers.CharField(
         source="item.name", read_only=True
     )
+    item_status = serializers.CharField(
+        source="item.status", read_only=True
+    )
     place_name = serializers.CharField(
         source="item.place.name", read_only=True
     )
@@ -274,7 +308,7 @@ class ItemPriceModerationSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemPriceSubmission
         fields = [
-            "id", "item", "item_name", "place_name",
+            "id", "item", "item_name", "item_status", "place_name",
             "submitted_by", "contributor", "price", "status",
             "reviewed_by", "reviewer", "reviewed_at",
             "rejection_reason", "submitted_at",
@@ -283,6 +317,41 @@ class ItemPriceModerationSerializer(serializers.ModelSerializer):
 
     def get_contributor(self, obj):
         return obj.submitted_by.username if obj.submitted_by else "Deleted user"
+
+    def get_reviewer(self, obj):
+        return obj.reviewed_by.username if obj.reviewed_by else None
+
+
+class PlacePhotoModerationSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    place_name = serializers.CharField(source="place.name", read_only=True)
+    username = serializers.SerializerMethodField()
+    reviewer = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlacePhoto
+        fields = [
+            "id",
+            "place",
+            "place_name",
+            "submitted_by",
+            "username",
+            "image",
+            "caption",
+            "status",
+            "reviewed_by",
+            "reviewer",
+            "reviewed_at",
+            "rejection_reason",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_username(self, obj):
+        return obj.submitted_by.username if obj.submitted_by else "Deleted user"
+
+    def get_image(self, obj):
+        return place_photo_image_url(obj, self.context.get("request"))
 
     def get_reviewer(self, obj):
         return obj.reviewed_by.username if obj.reviewed_by else None

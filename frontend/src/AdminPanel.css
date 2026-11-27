@@ -294,3 +294,21 @@ button.primary {
 td small { display:block; margin-top:3px; color:#8b8d83; font-size:11px; }
 .modal input[type="number"] { appearance:textfield; }
 @media (max-width:600px) { .admin-section-heading { align-items:flex-start; flex-direction:column; } .tabs { overflow-x:auto; padding-bottom:5px; } .tabs button { white-space:nowrap; } }
+
+.admin-photo-thumb {
+  display: block;
+  width: 104px;
+  height: 76px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f1f1ec;
+}
+
+.admin .tabs {
+  overflow-x: auto;
+  padding-bottom: 5px;
+}
+
+.admin .tabs button {
+  white-space: nowrap;
+}

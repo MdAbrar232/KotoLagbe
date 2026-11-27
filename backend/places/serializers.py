@@ -1,8 +1,11 @@
 
 from decimal import Decimal
 
+from django.core import signing
 from django.db import transaction
 from django.db.models import Avg, Q
+from django.urls import reverse
+from urllib.parse import urlencode
 from rest_framework import serializers
 
 from .models import (
@@ -11,6 +14,7 @@ from .models import (
     ItemPriceSubmission,
     ItemStatus,
     PlaceReview,
+    PlacePhoto,
     Favorite,
 )
 
@@ -71,6 +75,17 @@ class PlaceSerializer(serializers.ModelSerializer):
             current = current.parent
 
         return value
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        location = instance.location
+
+        if location is None or location.status != "approved":
+            representation["location"] = None
+            representation["location_name"] = None
+
+        return representation
+
 
 
 class PlaceItemSerializer(serializers.ModelSerializer):
@@ -102,6 +117,8 @@ class PlaceItemSerializer(serializers.ModelSerializer):
 
 
 class SuggestPlaceItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    status = serializers.CharField(read_only=True)
     place = serializers.PrimaryKeyRelatedField(
         queryset=Place.objects.all()
     )
@@ -202,6 +219,7 @@ class PlaceReviewSerializer(serializers.ModelSerializer):
             "place",
             "user",
             "username",
+            "image",
             "status",
             "rejection_reason",
             "created_at",
@@ -217,6 +235,110 @@ class PlaceReviewSerializer(serializers.ModelSerializer):
 
     def validate_comment(self, value):
         return value.strip()
+
+
+PLACE_PHOTO_URL_SALT = "kotolagbe.place-photo-preview"
+
+
+def place_photo_image_url(photo, request=None):
+    path = reverse("place-photo-image", args=[photo.pk])
+
+    if photo.status != ItemStatus.APPROVED:
+        user = getattr(request, "user", None)
+        can_preview = bool(
+            user
+            and user.is_authenticated
+            and (
+                user.is_staff
+                or photo.submitted_by_id == user.pk
+            )
+        )
+        if not can_preview:
+            return None
+
+        token = signing.dumps(
+            {"photo_id": photo.pk, "user_id": user.pk},
+            salt=PLACE_PHOTO_URL_SALT,
+        )
+        path = f"{path}?{urlencode({'token': token})}"
+
+    return request.build_absolute_uri(path) if request else path
+
+
+class PlacePhotoSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    image_upload = serializers.FileField(write_only=True, source="image")
+    place_name = serializers.CharField(source="place.name", read_only=True)
+    username = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlacePhoto
+        fields = [
+            "id",
+            "place",
+            "place_name",
+            "submitted_by",
+            "username",
+            "image",
+            "image_upload",
+            "caption",
+            "status",
+            "rejection_reason",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "place",
+            "place_name",
+            "submitted_by",
+            "username",
+            "status",
+            "rejection_reason",
+            "created_at",
+        ]
+
+    def get_username(self, obj):
+        return obj.submitted_by.username if obj.submitted_by else "Deleted user"
+
+    def get_image(self, obj):
+        return place_photo_image_url(obj, self.context.get("request"))
+
+    def validate_caption(self, value):
+        return value.strip()
+
+    def validate_image_upload(self, value):
+        from PIL import Image, UnidentifiedImageError
+
+        max_size = 5 * 1024 * 1024
+        if value.size > max_size:
+            raise serializers.ValidationError("Image must be 5 MB or smaller.")
+
+        try:
+            value.seek(0)
+            image = Image.open(value)
+            image_format = image.format
+            width, height = image.size
+            if width * height > 25_000_000:
+                raise serializers.ValidationError("Image dimensions must not exceed 25 megapixels.")
+            image.verify()
+        except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+            raise serializers.ValidationError("Upload a valid JPEG, PNG, or WebP image.")
+        finally:
+            value.seek(0)
+
+        if image_format not in {"JPEG", "PNG", "WEBP"}:
+            raise serializers.ValidationError("Only JPEG, PNG, and WebP images are allowed.")
+
+        extension = value.name.rsplit(".", 1)[-1].lower() if "." in value.name else ""
+        allowed_extensions = {
+            "JPEG": {"jpg", "jpeg"},
+            "PNG": {"png"},
+            "WEBP": {"webp"},
+        }
+        if extension not in allowed_extensions[image_format]:
+            raise serializers.ValidationError("The file extension must match the image format.")
+
+        return value
 
 
 class FavoriteCreateSerializer(serializers.ModelSerializer):

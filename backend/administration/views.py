@@ -22,6 +22,8 @@ from places.models import (
     PlaceItem,
     ItemPriceSubmission,
     ItemStatus,
+    PlacePhoto,
+    PlaceReview,
 )
 
 from .models import AdminActivityLog
@@ -36,6 +38,7 @@ from .serializers import (
     UserAdminUpdateSerializer,
     PlaceItemModerationSerializer,
     ItemPriceModerationSerializer,
+    PlacePhotoModerationSerializer,
 )
 
 
@@ -327,9 +330,39 @@ class FareAdminViewSet(
 
         return Response(self.get_serializer(fare).data)
 
+    
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
+        fare = self.get_object()
+
+        if fare.origin_id == fare.destination_id:
+            return Response(
+                {"detail": "Origin and destination must be different."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            fare.origin.status != "approved"
+            or fare.destination.status != "approved"
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "Both origin and destination must be approved "
+                        "before approving this fare."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not fare.transport_mode.is_active:
+            return Response(
+                {"detail": "The selected transport mode is inactive."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         return self._set_status(request, FareStatus.APPROVED)
+
 
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
@@ -662,6 +695,82 @@ class ItemPriceModerationViewSet(
         return self._set_status(request, ItemStatus.REJECTED)
 
 
+class PlacePhotoModerationViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAdmin]
+    serializer_class = PlacePhotoModerationSerializer
+
+    queryset = PlacePhoto.objects.select_related(
+        "place",
+        "submitted_by",
+        "reviewed_by",
+    ).all()
+
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["place__name", "submitted_by__username", "caption"]
+    ordering_fields = ["created_at", "status"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        wanted = self.request.query_params.get("status")
+
+        if wanted in ItemStatus.values:
+            queryset = queryset.filter(status=wanted)
+
+        return queryset
+
+    @transaction.atomic
+    def _set_status(self, request, value):
+        photo = self.get_object()
+
+        if photo.submitted_by_id == request.user.pk:
+            return Response(
+                {"detail": "You cannot moderate your own photo submission."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        reason = str(request.data.get("reason") or "").strip()
+
+        if value == ItemStatus.REJECTED and not reason:
+            return Response(
+                {"reason": "A rejection reason is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        photo.status = value
+        photo.reviewed_by = request.user
+        photo.reviewed_at = timezone.now()
+        photo.rejection_reason = reason if value == ItemStatus.REJECTED else ""
+        photo.save(update_fields=[
+            "status",
+            "reviewed_by",
+            "reviewed_at",
+            "rejection_reason",
+        ])
+
+        record_activity(
+            request,
+            value,
+            "place photo",
+            photo,
+            f"{value.title()} photo #{photo.pk} for {photo.place.name}",
+        )
+
+        return Response(self.get_serializer(photo).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        return self._set_status(request, ItemStatus.APPROVED)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        return self._set_status(request, ItemStatus.REJECTED)
+
+
 class StatsView(APIView):
     permission_classes = [IsAdmin]
 
@@ -724,6 +833,21 @@ class StatsView(APIView):
                 status=ItemStatus.APPROVED
             ).count(),
             "rejected_item_prices": ItemPriceSubmission.objects.filter(
+                status=ItemStatus.REJECTED
+            ).count(),
+
+            "reviews": PlaceReview.objects.count(),
+            "pending_reviews": PlaceReview.objects.filter(
+                status=ItemStatus.PENDING
+            ).count(),
+            "photos": PlacePhoto.objects.count(),
+            "pending_photos": PlacePhoto.objects.filter(
+                status=ItemStatus.PENDING
+            ).count(),
+            "approved_photos": PlacePhoto.objects.filter(
+                status=ItemStatus.APPROVED
+            ).count(),
+            "rejected_photos": PlacePhoto.objects.filter(
                 status=ItemStatus.REJECTED
             ).count(),
         })

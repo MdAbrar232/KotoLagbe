@@ -55,6 +55,58 @@ class ItemStatus(models.TextChoices):
     REJECTED = "rejected", "Rejected"
 
 
+class PlacePhoto(models.Model):
+    place = models.ForeignKey(
+        Place,
+        on_delete=models.CASCADE,
+        related_name="photos",
+    )
+
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="place_photo_submissions",
+    )
+
+    image = models.ImageField(
+        upload_to="private_place_photos/%Y/%m/",
+        max_length=255,
+    )
+
+    caption = models.CharField(max_length=255, blank=True)
+
+    status = models.CharField(
+        max_length=8,
+        choices=ItemStatus.choices,
+        default=ItemStatus.PENDING,
+        db_index=True,
+    )
+
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_place_photos",
+    )
+
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        indexes = [
+            models.Index(fields=["place", "status"]),
+            models.Index(fields=["submitted_by", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Photo #{self.pk} - {self.place.name}"
+
+
 class PlaceItem(models.Model):
     place = models.ForeignKey(
         Place,

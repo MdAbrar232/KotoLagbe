@@ -10,6 +10,9 @@ from .views import (
     PlaceReviewListCreateAPIView,
     PlaceReviewDetailAPIView,
     MyPlaceReviewAPIView,
+    PlacePhotoListCreateAPIView,
+    MyPlacePhotoListAPIView,
+    PlacePhotoImageAPIView,
     FavoriteListCreateAPIView,
     FavoriteDeleteAPIView,
 )
@@ -33,6 +36,22 @@ urlpatterns = [
         "items/<int:item_id>/prices/",
         ItemPriceSubmissionListCreateAPIView.as_view(),
         name="item-price-list-create",
+    ),
+
+    path(
+        "photos/<int:pk>/image/",
+        PlacePhotoImageAPIView.as_view(),
+        name="place-photo-image",
+    ),
+    path(
+        "<int:place_id>/photos/",
+        PlacePhotoListCreateAPIView.as_view(),
+        name="place-photo-list-create",
+    ),
+    path(
+        "<int:place_id>/photos/mine/",
+        MyPlacePhotoListAPIView.as_view(),
+        name="my-place-photos",
     ),
 
     path(

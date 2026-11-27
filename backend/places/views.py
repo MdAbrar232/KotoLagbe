@@ -1,16 +1,21 @@
 
+import mimetypes
+
+from django.core import signing
 from django.db import models
 from django.db.models import Avg, Count, Q
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 
 from rest_framework import generics
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import (
     AllowAny,
     BasePermission,
     IsAuthenticated,
     IsAuthenticatedOrReadOnly,
 )
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -20,15 +25,18 @@ from .models import (
     ItemPriceSubmission,
     ItemStatus,
     PlaceReview,
+    PlacePhoto,
     Favorite,
 )
 
 from .serializers import (
+    PLACE_PHOTO_URL_SALT,
     PlaceSerializer,
     PlaceItemSerializer,
     SuggestPlaceItemSerializer,
     ItemPriceSubmissionSerializer,
     PlaceReviewSerializer,
+    PlacePhotoSerializer,
     FavoriteCreateSerializer,
 )
 
@@ -60,8 +68,21 @@ def places_with_ratings():
     )
 
 
+class IsAdminOrReadOnly(BasePermission):
+    def has_permission(self, request, view):
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return True
+
+        user = request.user
+        return bool(
+            user
+            and user.is_authenticated
+            and user.is_staff
+        )
+
 class PlaceListCreateAPIView(generics.ListCreateAPIView):
     serializer_class = PlaceSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         queryset = places_with_ratings()
@@ -96,7 +117,10 @@ class PlaceListCreateAPIView(generics.ListCreateAPIView):
         if location:
             try:
                 location_id = int(location)
-                queryset = queryset.filter(location_id=location_id)
+                queryset = queryset.filter(
+    location_id=location_id,
+    location__status="approved",
+)
             except ValueError:
                 raise ValidationError({
                     "location": "Provide a valid location ID."
@@ -124,6 +148,7 @@ class PlaceDetailAPIView(generics.RetrieveAPIView):
     serializer_class = PlaceSerializer
 
 
+
 class PlaceItemListAPIView(generics.ListAPIView):
     serializer_class = PlaceItemSerializer
     permission_classes = [AllowAny]
@@ -145,7 +170,16 @@ class PlaceItemListAPIView(generics.ListAPIView):
         category = self.request.query_params.get("category", "").strip()
 
         if place:
-            queryset = queryset.filter(place_id=place)
+            try:
+                place_id = int(place.strip())
+                if place_id <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise ValidationError({
+                    "place": "Provide a valid place ID."
+                })
+
+            queryset = queryset.filter(place_id=place_id)
 
         if search:
             queryset = queryset.filter(name__icontains=search)
@@ -154,7 +188,6 @@ class PlaceItemListAPIView(generics.ListAPIView):
             queryset = queryset.filter(category__iexact=category)
 
         return queryset.order_by("name")
-
 
 class SuggestPlaceItemAPIView(generics.CreateAPIView):
     serializer_class = SuggestPlaceItemSerializer
@@ -187,6 +220,84 @@ class ItemPriceSubmissionListCreateAPIView(generics.ListCreateAPIView):
             item=self.get_item(),
             submitted_by=self.request.user,
         )
+
+
+class PlacePhotoListCreateAPIView(generics.ListCreateAPIView):
+    serializer_class = PlacePhotoSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get_place(self):
+        return get_object_or_404(Place, pk=self.kwargs["place_id"])
+
+    def get_queryset(self):
+        return PlacePhoto.objects.filter(
+            place=self.get_place(),
+            status=ItemStatus.APPROVED,
+        ).select_related("place", "submitted_by")
+
+    def perform_create(self, serializer):
+        serializer.save(
+            place=self.get_place(),
+            submitted_by=self.request.user,
+            status=ItemStatus.PENDING,
+        )
+
+
+class PlacePhotoImageAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        photo = get_object_or_404(PlacePhoto, pk=pk)
+        is_contributor = (
+            request.user.is_authenticated
+            and photo.submitted_by_id == request.user.pk
+        )
+        is_staff = request.user.is_authenticated and request.user.is_staff
+        has_private_access = is_contributor or is_staff
+
+        if photo.status != ItemStatus.APPROVED and not has_private_access:
+            token = request.query_params.get("token", "")
+            try:
+                token_data = signing.loads(
+                    token,
+                    salt=PLACE_PHOTO_URL_SALT,
+                    max_age=900,
+                )
+            except signing.BadSignature:
+                raise PermissionDenied("This photo is not publicly available.")
+
+            if token_data.get("photo_id") != photo.pk:
+                raise PermissionDenied("This photo is not publicly available.")
+
+        if not photo.image or not photo.image.storage.exists(photo.image.name):
+            raise NotFound("The photo file is unavailable.")
+
+        try:
+            image_file = photo.image.open("rb")
+        except OSError:
+            raise NotFound("The photo file is unavailable.")
+
+        content_type = mimetypes.guess_type(photo.image.name)[0] or "application/octet-stream"
+        response = FileResponse(image_file, content_type=content_type)
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class MyPlacePhotoListAPIView(generics.ListAPIView):
+    serializer_class = PlacePhotoSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return PlacePhoto.objects.filter(
+            place_id=self.kwargs["place_id"],
+            submitted_by=self.request.user,
+        ).select_related("place", "submitted_by")
 
 
 class PlaceReviewListCreateAPIView(generics.ListCreateAPIView):
